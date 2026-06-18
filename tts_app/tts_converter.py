@@ -19,17 +19,30 @@ _ESPEAK_CANDIDATES = [
     r"C:\Program Files (x86)\eSpeak NG\espeak-ng.exe",
 ]
 
-_FFMPEG_CANDIDATES = [
-    "ffmpeg",
-    r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
-    r"C:\ffmpeg\bin\ffmpeg.exe",
-    r"C:\ProgramData\chocolatey\bin\ffmpeg.exe",
-    # winget/scoop install locations
-    *[str(p) for p in [
-        *__import__('pathlib').Path(r"C:\Users").glob(r"*\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg*\ffmpeg*\bin\ffmpeg.exe"),
-        *__import__('pathlib').Path(r"C:\Users").glob(r"*\scoop\apps\ffmpeg\current\bin\ffmpeg.exe"),
-    ]],
-]
+def _find_ffmpeg_candidates() -> list:
+    candidates = [
+        "ffmpeg",
+        r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
+        r"C:\ffmpeg\bin\ffmpeg.exe",
+        r"C:\ProgramData\chocolatey\bin\ffmpeg.exe",
+    ]
+    try:
+        from pathlib import Path
+        import os
+        # Search every user's WinGet and scoop directories
+        users_dir = Path("C:\\Users")
+        for user_dir in users_dir.iterdir():
+            winget_base = user_dir / "AppData" / "Local" / "Microsoft" / "WinGet" / "Packages"
+            for exe in winget_base.glob("Gyan.FFmpeg*\\ffmpeg*\\bin\\ffmpeg.exe"):
+                candidates.append(str(exe))
+            scoop_exe = user_dir / "scoop" / "apps" / "ffmpeg" / "current" / "bin" / "ffmpeg.exe"
+            if scoop_exe.exists():
+                candidates.append(str(scoop_exe))
+    except Exception:
+        pass
+    return candidates
+
+_FFMPEG_CANDIDATES = _find_ffmpeg_candidates()
 
 
 def _find_tool(candidates: list[str], name: str) -> str:
