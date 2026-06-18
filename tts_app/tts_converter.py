@@ -6,10 +6,39 @@ Converts PDF/DOCX documents to MP4 audio using university lecturer personas.
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+# espeak-ng may be installed to a fixed path on Windows
+_ESPEAK_CANDIDATES = [
+    "espeak-ng",
+    r"C:\Program Files\eSpeak NG\espeak-ng.exe",
+    r"C:\Program Files (x86)\eSpeak NG\espeak-ng.exe",
+]
+
+
+def _find_tool(candidates: list[str], name: str) -> str:
+    """Return the first candidate that exists on PATH or as an absolute path."""
+    for c in candidates:
+        if shutil.which(c) or (os.path.isabs(c) and os.path.isfile(c)):
+            return c
+    print(
+        f"\n[ERROR] '{name}' not found.\n"
+        + ("  Install from: https://github.com/espeak-ng/espeak-ng/releases\n"
+           "  Download the .msi installer, install it, then open a NEW terminal.\n"
+           if name == "espeak-ng" else
+           "  Run:  winget install Gyan.FFmpeg\n"
+           "  Then open a NEW terminal.\n"),
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+ESPEAK = None  # resolved lazily on first use
+FFMPEG = None
 
 
 PERSONAS = {
@@ -153,6 +182,12 @@ def chunk_text(text: str, chunk_size: int = 5000) -> list[str]:
 
 def text_to_wav(text: str, persona: dict, output_wav: str) -> bool:
     """Convert text to WAV using espeak-ng with persona settings."""
+    global ESPEAK, FFMPEG
+    if ESPEAK is None:
+        ESPEAK = _find_tool(_ESPEAK_CANDIDATES, "espeak-ng")
+    if FFMPEG is None:
+        FFMPEG = _find_tool(["ffmpeg"], "ffmpeg")
+
     chunks = chunk_text(clean_text(text))
     wav_parts = []
 
@@ -160,7 +195,7 @@ def text_to_wav(text: str, persona: dict, output_wav: str) -> bool:
         for i, chunk in enumerate(chunks):
             part_wav = os.path.join(tmpdir, f"part_{i:04d}.wav")
             cmd = [
-                "espeak-ng",
+                ESPEAK,
                 "-v", persona["voice"],
                 "-s", str(persona["speed"]),
                 "-p", str(persona["pitch"]),
@@ -183,7 +218,7 @@ def text_to_wav(text: str, persona: dict, output_wav: str) -> bool:
             with open(list_file, "w") as f:
                 for p in wav_parts:
                     f.write(f"file '{p}'\n")
-            cmd = ["ffmpeg", "-f", "concat", "-safe", "0", "-i", list_file,
+            cmd = [FFMPEG, "-f", "concat", "-safe", "0", "-i", list_file,
                    "-c", "copy", output_wav, "-y", "-loglevel", "error"]
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
@@ -195,8 +230,11 @@ def text_to_wav(text: str, persona: dict, output_wav: str) -> bool:
 
 def wav_to_mp4(wav_path: str, mp4_path: str, title: str = "", persona_name: str = "") -> bool:
     """Convert WAV to MP4 (audio-only) with AAC encoding."""
+    global FFMPEG
+    if FFMPEG is None:
+        FFMPEG = _find_tool(["ffmpeg"], "ffmpeg")
     cmd = [
-        "ffmpeg", "-i", wav_path,
+        FFMPEG, "-i", wav_path,
         "-c:a", "aac", "-b:a", "128k",
     ]
     if title:
