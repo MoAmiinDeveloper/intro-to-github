@@ -2,9 +2,12 @@
 """
 Document to Speech Converter
 Converts PDF/DOCX documents to MP4 audio using university lecturer personas.
+Uses Microsoft Edge neural voices (edge-tts) for natural-sounding speech.
+Falls back to espeak-ng if network is unavailable.
 """
 
 import argparse
+import asyncio
 import os
 import shutil
 import subprocess
@@ -12,12 +15,87 @@ import sys
 import tempfile
 from pathlib import Path
 
-# espeak-ng may be installed to a fixed path on Windows
-_ESPEAK_CANDIDATES = [
-    "espeak-ng",
-    r"C:\Program Files\eSpeak NG\espeak-ng.exe",
-    r"C:\Program Files (x86)\eSpeak NG\espeak-ng.exe",
-]
+
+# ---------------------------------------------------------------------------
+# Personas — Microsoft Edge neural voices with rate/pitch tuning
+# rate: percentage relative to default e.g. "+10%" faster, "-5%" slower
+# pitch: Hz offset e.g. "+5Hz" higher, "-10Hz" lower
+# ---------------------------------------------------------------------------
+PERSONAS = {
+    "oxford": {
+        "name": "Professor Smith (Oxford)",
+        "description": "Formal British male, authoritative and measured",
+        "voice": "en-GB-RyanNeural",
+        "rate": "-8%",
+        "pitch": "-5Hz",
+    },
+    "cambridge": {
+        "name": "Professor Davies (Cambridge)",
+        "description": "British female, precise and scholarly",
+        "voice": "en-GB-SoniaNeural",
+        "rate": "-12%",
+        "pitch": "-3Hz",
+    },
+    "american": {
+        "name": "Dr. Johnson (MIT)",
+        "description": "American male, confident and clear",
+        "voice": "en-US-GuyNeural",
+        "rate": "+5%",
+        "pitch": "+0Hz",
+    },
+    "american_female": {
+        "name": "Dr. Chen (Stanford)",
+        "description": "American female, warm and engaging",
+        "voice": "en-US-JennyNeural",
+        "rate": "+0%",
+        "pitch": "+2Hz",
+    },
+    "australian": {
+        "name": "Professor Walsh (Melbourne)",
+        "description": "Australian male, relaxed and approachable",
+        "voice": "en-AU-WilliamNeural",
+        "rate": "-5%",
+        "pitch": "-2Hz",
+    },
+    "australian_female": {
+        "name": "Dr. Murray (Sydney)",
+        "description": "Australian female, clear and enthusiastic",
+        "voice": "en-AU-NatashaNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+    },
+    "indian": {
+        "name": "Professor Patel (IIT Delhi)",
+        "description": "Indian female, articulate and thorough",
+        "voice": "en-IN-NeerjaNeural",
+        "rate": "-5%",
+        "pitch": "+0Hz",
+    },
+    "irish": {
+        "name": "Dr. O'Brien (Trinity College)",
+        "description": "Irish male, warm and expressive",
+        "voice": "en-IE-ConnorNeural",
+        "rate": "-3%",
+        "pitch": "+2Hz",
+    },
+}
+
+# Fallback espeak voices (used only if edge-tts fails / no internet)
+_ESPEAK_FALLBACK = {
+    "oxford":            {"voice": "en-gb-x-rp",      "speed": 120, "pitch": 45, "gap": 15},
+    "cambridge":         {"voice": "en-gb-x-rp",      "speed": 115, "pitch": 35, "gap": 18},
+    "american":          {"voice": "en-us",            "speed": 145, "pitch": 58, "gap": 10},
+    "american_female":   {"voice": "en-us",            "speed": 140, "pitch": 62, "gap": 10},
+    "australian":        {"voice": "en-gb",            "speed": 130, "pitch": 50, "gap": 12},
+    "australian_female": {"voice": "en-gb",            "speed": 135, "pitch": 58, "gap": 11},
+    "indian":            {"voice": "en-gb",            "speed": 128, "pitch": 55, "gap": 11},
+    "irish":             {"voice": "en-gb-scotland",   "speed": 130, "pitch": 52, "gap": 12},
+}
+
+
+# ---------------------------------------------------------------------------
+# Tool discovery
+# ---------------------------------------------------------------------------
 
 def _find_ffmpeg_candidates() -> list:
     candidates = [
@@ -27,9 +105,6 @@ def _find_ffmpeg_candidates() -> list:
         r"C:\ProgramData\chocolatey\bin\ffmpeg.exe",
     ]
     try:
-        from pathlib import Path
-        import os
-        # Search every user's WinGet and scoop directories
         users_dir = Path("C:\\Users")
         for user_dir in users_dir.iterdir():
             winget_base = user_dir / "AppData" / "Local" / "Microsoft" / "WinGet" / "Packages"
@@ -42,18 +117,25 @@ def _find_ffmpeg_candidates() -> list:
         pass
     return candidates
 
+
+_ESPEAK_CANDIDATES = [
+    "espeak-ng",
+    r"C:\Program Files\eSpeak NG\espeak-ng.exe",
+    r"C:\Program Files (x86)\eSpeak NG\espeak-ng.exe",
+]
 _FFMPEG_CANDIDATES = _find_ffmpeg_candidates()
 
+FFMPEG = None
 
-def _find_tool(candidates: list[str], name: str) -> str:
-    """Return the first candidate that exists on PATH or as an absolute path."""
+
+def _find_tool(candidates: list, name: str) -> str:
     for c in candidates:
         if shutil.which(c) or (os.path.isabs(c) and os.path.isfile(c)):
             return c
     print(
         f"\n[ERROR] '{name}' not found.\n"
         + ("  Install from: https://github.com/espeak-ng/espeak-ng/releases\n"
-           "  Download the .msi installer, install it, then open a NEW terminal.\n"
+           "  Then open a NEW terminal.\n"
            if name == "espeak-ng" else
            "  Run:  winget install Gyan.FFmpeg\n"
            "  Then open a NEW terminal.\n"),
@@ -62,88 +144,23 @@ def _find_tool(candidates: list[str], name: str) -> str:
     sys.exit(1)
 
 
-ESPEAK = None  # resolved lazily on first use
-FFMPEG = None
+def _get_ffmpeg() -> str:
+    global FFMPEG
+    if FFMPEG is None:
+        FFMPEG = _find_tool(_FFMPEG_CANDIDATES, "ffmpeg")
+    return FFMPEG
 
 
-PERSONAS = {
-    "oxford": {
-        "name": "Professor Smith (Oxford)",
-        "description": "Formal British academic, authoritative and measured",
-        "voice": "en-gb-x-rp",
-        "speed": 120,
-        "pitch": 45,
-        "gap": 15,
-    },
-    "american": {
-        "name": "Dr. Johnson (MIT)",
-        "description": "Energetic American professor, enthusiastic and clear",
-        "voice": "en-us",
-        "speed": 145,
-        "pitch": 58,
-        "gap": 10,
-    },
-    "scottish": {
-        "name": "Professor MacGregor (Edinburgh)",
-        "description": "Scottish academic, warm and deliberate",
-        "voice": "en-gb-scotland",
-        "speed": 125,
-        "pitch": 40,
-        "gap": 12,
-    },
-    "lancaster": {
-        "name": "Dr. Clarke (Lancaster)",
-        "description": "Northern English lecturer, approachable and thorough",
-        "voice": "en-gb-x-gbclan",
-        "speed": 130,
-        "pitch": 52,
-        "gap": 11,
-    },
-    "received": {
-        "name": "Professor Davies (Cambridge)",
-        "description": "Classic Received Pronunciation, precise and scholarly",
-        "voice": "en-gb-x-rp",
-        "speed": 115,
-        "pitch": 35,
-        "gap": 18,
-    },
-    "newyork": {
-        "name": "Dr. Rivera (Columbia)",
-        "description": "New York academic, direct and engaging",
-        "voice": "en-us-nyc",
-        "speed": 150,
-        "pitch": 55,
-        "gap": 9,
-    },
-    "caribbean": {
-        "name": "Professor Williams (UWI)",
-        "description": "Caribbean academic, rhythmic and expressive",
-        "voice": "en-029",
-        "speed": 135,
-        "pitch": 60,
-        "gap": 10,
-    },
-    "westmidlands": {
-        "name": "Dr. Patel (Birmingham)",
-        "description": "West Midlands lecturer, conversational and patient",
-        "voice": "en-gb-x-gbcwmd",
-        "speed": 128,
-        "pitch": 50,
-        "gap": 12,
-    },
-}
-
+# ---------------------------------------------------------------------------
+# Text extraction
+# ---------------------------------------------------------------------------
 
 def extract_text_from_pdf(path: str) -> str:
     try:
         import pdfplumber
         with pdfplumber.open(path) as pdf:
-            pages = []
-            for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    pages.append(text.strip())
-            return "\n\n".join(pages)
+            pages = [page.extract_text() for page in pdf.pages]
+            return "\n\n".join(p.strip() for p in pages if p)
     except Exception as e:
         print(f"Error reading PDF: {e}", file=sys.stderr)
         sys.exit(1)
@@ -174,29 +191,26 @@ def extract_text(path: str) -> str:
         sys.exit(1)
 
 
+# ---------------------------------------------------------------------------
+# Text utilities
+# ---------------------------------------------------------------------------
+
 def clean_text(text: str) -> str:
-    """Remove characters that cause issues with espeak."""
     import re
-    # Collapse whitespace
     text = re.sub(r'\s+', ' ', text)
-    # Remove non-printable chars except newlines
-    text = re.sub(r'[^\x20-\x7E\n]', ' ', text)
-    # Limit length (espeak can handle ~10k chars at once)
+    # Keep printable ASCII + common unicode punctuation
+    text = re.sub(r'[^\x20-\x7E‘’“”–—]', ' ', text)
     return text.strip()
 
 
-def chunk_text(text: str, chunk_size: int = 5000) -> list[str]:
-    """Split text into chunks at sentence boundaries."""
+def chunk_text(text: str, chunk_size: int = 4000) -> list:
     import re
     sentences = re.split(r'(?<=[.!?])\s+', text)
-    chunks = []
-    current = []
-    current_len = 0
+    chunks, current, current_len = [], [], 0
     for sentence in sentences:
         if current_len + len(sentence) > chunk_size and current:
             chunks.append(" ".join(current))
-            current = [sentence]
-            current_len = len(sentence)
+            current, current_len = [sentence], len(sentence)
         else:
             current.append(sentence)
             current_len += len(sentence)
@@ -205,29 +219,74 @@ def chunk_text(text: str, chunk_size: int = 5000) -> list[str]:
     return chunks
 
 
-def text_to_wav(text: str, persona: dict, output_wav: str) -> bool:
-    """Convert text to WAV using espeak-ng with persona settings."""
-    global ESPEAK, FFMPEG
-    if ESPEAK is None:
-        ESPEAK = _find_tool(_ESPEAK_CANDIDATES, "espeak-ng")
-    if FFMPEG is None:
-        FFMPEG = _find_tool(_FFMPEG_CANDIDATES, "ffmpeg")
+# ---------------------------------------------------------------------------
+# TTS: edge-tts (neural) — primary
+# ---------------------------------------------------------------------------
 
+async def _edge_tts_chunk(text: str, voice: str, rate: str, pitch: str, out_mp3: str):
+    import edge_tts
+    tts = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
+    await tts.save(out_mp3)
+
+
+async def _synthesize_edge(text: str, persona: dict, output_wav: str) -> bool:
     chunks = chunk_text(clean_text(text))
-    wav_parts = []
+    ffmpeg = _get_ffmpeg()
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        mp3_parts = []
+        total = len(chunks)
+        for i, chunk in enumerate(chunks, 1):
+            print(f"\r  Chunk {i}/{total}...", end="", flush=True)
+            part_mp3 = os.path.join(tmpdir, f"part_{i:04d}.mp3")
+            await _edge_tts_chunk(chunk, persona["voice"], persona["rate"], persona["pitch"], part_mp3)
+            mp3_parts.append(part_mp3)
+        print()  # newline after progress
+
+        if len(mp3_parts) == 1:
+            # Convert single mp3 to wav
+            cmd = [ffmpeg, "-i", mp3_parts[0], output_wav, "-y", "-loglevel", "error"]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            return result.returncode == 0
+
+        # Concatenate all mp3s then convert to wav
+        list_file = os.path.join(tmpdir, "parts.txt")
+        concat_mp3 = os.path.join(tmpdir, "concat.mp3")
+        with open(list_file, "w") as f:
+            for p in mp3_parts:
+                f.write(f"file '{p}'\n")
+        cmd = [ffmpeg, "-f", "concat", "-safe", "0", "-i", list_file,
+               "-c", "copy", concat_mp3, "-y", "-loglevel", "error"]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"\nffmpeg concat error: {result.stderr}", file=sys.stderr)
+            return False
+
+        cmd = [ffmpeg, "-i", concat_mp3, output_wav, "-y", "-loglevel", "error"]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"\nffmpeg convert error: {result.stderr}", file=sys.stderr)
+            return False
+
+    return True
+
+
+# ---------------------------------------------------------------------------
+# TTS: espeak-ng — offline fallback
+# ---------------------------------------------------------------------------
+
+def _synthesize_espeak(text: str, persona_key: str, output_wav: str) -> bool:
+    espeak = _find_tool(_ESPEAK_CANDIDATES, "espeak-ng")
+    ffmpeg = _get_ffmpeg()
+    fb = _ESPEAK_FALLBACK.get(persona_key, _ESPEAK_FALLBACK["oxford"])
+    chunks = chunk_text(clean_text(text))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        wav_parts = []
         for i, chunk in enumerate(chunks):
             part_wav = os.path.join(tmpdir, f"part_{i:04d}.wav")
-            cmd = [
-                ESPEAK,
-                "-v", persona["voice"],
-                "-s", str(persona["speed"]),
-                "-p", str(persona["pitch"]),
-                "-g", str(persona["gap"]),
-                chunk,
-                "-w", part_wav,
-            ]
+            cmd = [espeak, "-v", fb["voice"], "-s", str(fb["speed"]),
+                   "-p", str(fb["pitch"]), "-g", str(fb["gap"]), chunk, "-w", part_wav]
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
                 print(f"espeak-ng error: {result.stderr}", file=sys.stderr)
@@ -235,39 +294,33 @@ def text_to_wav(text: str, persona: dict, output_wav: str) -> bool:
             wav_parts.append(part_wav)
 
         if len(wav_parts) == 1:
-            import shutil
             shutil.copy(wav_parts[0], output_wav)
         else:
-            # Concatenate WAV files using ffmpeg
             list_file = os.path.join(tmpdir, "parts.txt")
             with open(list_file, "w") as f:
                 for p in wav_parts:
                     f.write(f"file '{p}'\n")
-            cmd = [FFMPEG, "-f", "concat", "-safe", "0", "-i", list_file,
+            cmd = [ffmpeg, "-f", "concat", "-safe", "0", "-i", list_file,
                    "-c", "copy", output_wav, "-y", "-loglevel", "error"]
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
                 print(f"ffmpeg concat error: {result.stderr}", file=sys.stderr)
                 return False
-
     return True
 
 
+# ---------------------------------------------------------------------------
+# MP4 encoding
+# ---------------------------------------------------------------------------
+
 def wav_to_mp4(wav_path: str, mp4_path: str, title: str = "", persona_name: str = "") -> bool:
-    """Convert WAV to MP4 (audio-only) with AAC encoding."""
-    global FFMPEG
-    if FFMPEG is None:
-        FFMPEG = _find_tool(_FFMPEG_CANDIDATES, "ffmpeg")
-    cmd = [
-        FFMPEG, "-i", wav_path,
-        "-c:a", "aac", "-b:a", "128k",
-    ]
+    ffmpeg = _get_ffmpeg()
+    cmd = [ffmpeg, "-i", wav_path, "-c:a", "aac", "-b:a", "128k"]
     if title:
         cmd += ["-metadata", f"title={title}"]
     if persona_name:
         cmd += ["-metadata", f"artist={persona_name}"]
     cmd += [mp4_path, "-y", "-loglevel", "error"]
-
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"ffmpeg encode error: {result.stderr}", file=sys.stderr)
@@ -275,16 +328,20 @@ def wav_to_mp4(wav_path: str, mp4_path: str, title: str = "", persona_name: str 
     return True
 
 
+# ---------------------------------------------------------------------------
+# Main conversion flow
+# ---------------------------------------------------------------------------
+
 def list_personas():
     print("\nAvailable lecturer personas:\n")
-    print(f"  {'Key':<15} {'Name':<35} Description")
-    print("  " + "-" * 75)
+    print(f"  {'Key':<20} {'Name':<38} {'Voice':<25} Description")
+    print("  " + "-" * 100)
     for key, p in PERSONAS.items():
-        print(f"  {key:<15} {p['name']:<35} {p['description']}")
+        print(f"  {key:<20} {p['name']:<38} {p['voice']:<25} {p['description']}")
     print()
 
 
-def convert(input_path: str, output_path: str, persona_key: str, verbose: bool = False):
+def convert(input_path: str, output_path: str, persona_key: str, verbose: bool = False, force_espeak: bool = False):
     if persona_key not in PERSONAS:
         print(f"Unknown persona '{persona_key}'. Use --list to see available personas.")
         sys.exit(1)
@@ -293,7 +350,7 @@ def convert(input_path: str, output_path: str, persona_key: str, verbose: bool =
     doc_title = Path(input_path).stem
 
     if verbose:
-        print(f"Persona   : {persona['name']}")
+        print(f"Persona   : {persona['name']} ({persona['voice']})")
         print(f"Document  : {input_path}")
         print(f"Output    : {output_path}")
 
@@ -306,8 +363,22 @@ def convert(input_path: str, output_path: str, persona_key: str, verbose: bool =
         tmp_wav = tmp.name
 
     try:
-        print("Synthesizing speech...", end=" ", flush=True)
-        ok = text_to_wav(text, persona, tmp_wav)
+        print("Synthesizing speech (neural voice)...")
+        ok = False
+
+        if not force_espeak:
+            try:
+                import edge_tts  # noqa: F401
+                ok = asyncio.run(_synthesize_edge(text, persona, tmp_wav))
+            except ImportError:
+                print("  edge-tts not installed, run: pip install edge-tts")
+            except Exception as e:
+                print(f"  Neural voice failed ({e}), falling back to offline voice...")
+
+        if not ok:
+            print("  Using offline fallback voice (install edge-tts for better quality)...")
+            ok = _synthesize_espeak(text, persona_key, tmp_wav)
+
         if not ok:
             sys.exit(1)
         print("done")
@@ -318,12 +389,16 @@ def convert(input_path: str, output_path: str, persona_key: str, verbose: bool =
             sys.exit(1)
         print("done")
 
-        size_kb = os.path.getsize(output_path) / 1024
-        print(f"\nOutput saved: {output_path} ({size_kb:.1f} KB)")
+        size_mb = os.path.getsize(output_path) / (1024 * 1024)
+        print(f"\nOutput saved: {output_path} ({size_mb:.1f} MB)")
     finally:
         if os.path.exists(tmp_wav):
             os.unlink(tmp_wav)
 
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
@@ -339,13 +414,11 @@ Examples:
     )
     parser.add_argument("input", nargs="?", help="Input file (PDF, DOCX, or TXT)")
     parser.add_argument("-o", "--output", help="Output MP4 file path")
-    parser.add_argument(
-        "--persona",
-        default="oxford",
-        metavar="NAME",
-        help="Lecturer persona to use (default: oxford). Use --list to see all.",
-    )
+    parser.add_argument("--persona", default="oxford", metavar="NAME",
+                        help="Lecturer persona (default: oxford). Use --list to see all.")
     parser.add_argument("--list", action="store_true", help="List available personas and exit")
+    parser.add_argument("--offline", action="store_true",
+                        help="Force offline espeak-ng voice (skip neural TTS)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show detailed output")
 
     args = parser.parse_args()
@@ -363,7 +436,7 @@ Examples:
         sys.exit(1)
 
     output = args.output or (Path(args.input).stem + f"_{args.persona}.mp4")
-    convert(args.input, output, args.persona, verbose=args.verbose)
+    convert(args.input, output, args.persona, verbose=args.verbose, force_espeak=args.offline)
 
 
 if __name__ == "__main__":
