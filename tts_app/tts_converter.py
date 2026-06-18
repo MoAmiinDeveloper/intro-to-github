@@ -19,6 +19,18 @@ _ESPEAK_CANDIDATES = [
     r"C:\Program Files (x86)\eSpeak NG\espeak-ng.exe",
 ]
 
+_FFMPEG_CANDIDATES = [
+    "ffmpeg",
+    r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
+    r"C:\ffmpeg\bin\ffmpeg.exe",
+    r"C:\ProgramData\chocolatey\bin\ffmpeg.exe",
+    # winget/scoop install locations
+    *[str(p) for p in [
+        *__import__('pathlib').Path(r"C:\Users").glob(r"*\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg*\ffmpeg*\bin\ffmpeg.exe"),
+        *__import__('pathlib').Path(r"C:\Users").glob(r"*\scoop\apps\ffmpeg\current\bin\ffmpeg.exe"),
+    ]],
+]
+
 
 def _find_tool(candidates: list[str], name: str) -> str:
     """Return the first candidate that exists on PATH or as an absolute path."""
@@ -186,7 +198,7 @@ def text_to_wav(text: str, persona: dict, output_wav: str) -> bool:
     if ESPEAK is None:
         ESPEAK = _find_tool(_ESPEAK_CANDIDATES, "espeak-ng")
     if FFMPEG is None:
-        FFMPEG = _find_tool(["ffmpeg"], "ffmpeg")
+        FFMPEG = _find_tool(_FFMPEG_CANDIDATES, "ffmpeg")
 
     chunks = chunk_text(clean_text(text))
     wav_parts = []
@@ -232,7 +244,7 @@ def wav_to_mp4(wav_path: str, mp4_path: str, title: str = "", persona_name: str 
     """Convert WAV to MP4 (audio-only) with AAC encoding."""
     global FFMPEG
     if FFMPEG is None:
-        FFMPEG = _find_tool(["ffmpeg"], "ffmpeg")
+        FFMPEG = _find_tool(_FFMPEG_CANDIDATES, "ffmpeg")
     cmd = [
         FFMPEG, "-i", wav_path,
         "-c:a", "aac", "-b:a", "128k",
