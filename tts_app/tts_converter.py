@@ -78,6 +78,13 @@ PERSONAS = {
         "rate": "-3%",
         "pitch": "+2Hz",
     },
+    "andrew": {
+        "name": "Andrew (Excel course narrator)",
+        "description": "American male, natural and conversational",
+        "voice": "en-US-AndrewNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+    },
 }
 
 # Fallback espeak voices (used only if edge-tts fails / no internet)
@@ -90,6 +97,7 @@ _ESPEAK_FALLBACK = {
     "australian_female": {"voice": "en-gb",            "speed": 135, "pitch": 58, "gap": 11},
     "indian":            {"voice": "en-gb",            "speed": 128, "pitch": 55, "gap": 11},
     "irish":             {"voice": "en-gb-scotland",   "speed": 130, "pitch": 52, "gap": 12},
+    "andrew":            {"voice": "en-us",            "speed": 145, "pitch": 50, "gap": 10},
 }
 
 
