@@ -1,0 +1,441 @@
+// Somtel Enterprise Sales System
+// Phase 1: access, settings, branding, clients and contacts, catalog.
+// Later phases add pipeline, quotes, orders, renewals and reports.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// People and access
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  HEAD_OF_ENTERPRISE
+  MANAGER
+  ACCOUNT_MANAGER
+  ENTERPRISE_SUPPORT
+  PROCUREMENT
+  FINANCE
+  BILLING
+  TECH
+}
+
+model User {
+  id             String    @id @default(cuid())
+  name           String
+  email          String    @unique
+  phone          String?
+  title          String?
+  passwordHash   String
+  active         Boolean   @default(true)
+  managerId      String?
+  manager        User?     @relation("ReportingLine", fields: [managerId], references: [id])
+  reports        User[]    @relation("ReportingLine")
+  failedLogins   Int       @default(0)
+  lockedUntil    DateTime?
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  roles          UserRole[]
+  sectors        UserSector[]
+  techSections   UserTechSection[]
+  ownedClients   Client[]           @relation("ClientOwner")
+  resetTokens    PasswordResetToken[]
+  notifications  Notification[]
+  auditLogs      AuditLog[]
+}
+
+model UserRole {
+  userId String
+  role   Role
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, role])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model Sector {
+  id        String       @id @default(cuid())
+  name      String       @unique
+  active    Boolean      @default(true)
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  users     UserSector[]
+  clients   Client[]
+}
+
+model UserSector {
+  userId   String
+  sectorId String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sector   Sector @relation(fields: [sectorId], references: [id], onDelete: Cascade)
+
+  @@id([userId, sectorId])
+}
+
+model TechSection {
+  id        String               @id @default(cuid())
+  name      String               @unique
+  email     String?
+  active    Boolean              @default(true)
+  sortOrder Int                  @default(0)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  users     UserTechSection[]
+  services  ServiceTechSection[]
+}
+
+model UserTechSection {
+  userId        String
+  techSectionId String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  techSection   TechSection @relation(fields: [techSectionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, techSectionId])
+}
+
+// ---------------------------------------------------------------------------
+// Settings and reference lists
+// ---------------------------------------------------------------------------
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model CompanyProfile {
+  id         String   @id @default("company")
+  name       String
+  legalName  String?
+  address    String?
+  city       String?
+  phone      String?
+  email      String?
+  website    String?
+  footerText String?
+  logoPath   String?
+  updatedAt  DateTime @updatedAt
+}
+
+enum StageKind {
+  OPEN
+  WON
+  LOST
+}
+
+model PipelineStage {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  probability Int
+  kind        StageKind @default(OPEN)
+  sortOrder   Int       @default(0)
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model LostReason {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum TermsCategory {
+  IT_RESALE
+  A2P_SMS
+  IVR
+  TRACKING
+  GENERAL
+}
+
+model TermsTemplate {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  category  TermsCategory
+  body      String
+  active    Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  deletedAt DateTime?
+}
+
+enum ClauseCategory {
+  PAYMENT
+  SCOPE
+  DELIVERY
+  WARRANTY
+  VALIDITY
+  OTHER
+}
+
+model TermsClause {
+  id        String         @id @default(cuid())
+  category  ClauseCategory
+  text      String
+  sortOrder Int            @default(0)
+  active    Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  deletedAt DateTime?
+}
+
+// ---------------------------------------------------------------------------
+// Clients
+// ---------------------------------------------------------------------------
+
+enum ClientStatus {
+  PROSPECT
+  ACTIVE
+  INACTIVE
+}
+
+model Client {
+  id          String       @id @default(cuid())
+  name        String
+  sectorId    String?
+  sector      Sector?      @relation(fields: [sectorId], references: [id])
+  industry    String?
+  address     String?
+  city        String?
+  phone       String?
+  email       String?
+  website     String?
+  ownerId     String?
+  owner       User?        @relation("ClientOwner", fields: [ownerId], references: [id])
+  status      ClientStatus @default(PROSPECT)
+  notes       String?
+  upsellNotes String?
+  createdById String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+  contacts    Contact[]
+
+  @@index([name])
+  @@index([ownerId])
+  @@index([sectorId])
+}
+
+model Contact {
+  id              String    @id @default(cuid())
+  clientId        String
+  client          Client    @relation(fields: [clientId], references: [id])
+  name            String
+  title           String?
+  phone           String?
+  email           String?
+  isDecisionMaker Boolean   @default(false)
+  notes           String?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  @@index([clientId])
+}
+
+// ---------------------------------------------------------------------------
+// Catalog: Product Family -> Service -> Plan -> Price (tiers)
+// ---------------------------------------------------------------------------
+
+enum ProductType {
+  IT
+  NON_IT
+  TRACKING
+}
+
+enum ItemKind {
+  LICENCE
+  HARDWARE
+  SERVICE
+}
+
+enum PriceType {
+  ONE_TIME
+  MONTHLY
+  PER_UNIT
+  PER_MINUTE
+  PER_SMS_TIERED
+  MARGIN_PERCENT
+}
+
+enum BillingFrequency {
+  ONE_TIME
+  MONTHLY
+}
+
+model ProductFamily {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  enabled     Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  services    Service[]
+}
+
+model Service {
+  id           String               @id @default(cuid())
+  familyId     String
+  family       ProductFamily        @relation(fields: [familyId], references: [id])
+  name         String
+  description  String?
+  vendor       String?
+  productType  ProductType
+  itemKind     ItemKind
+  // Service shapes or options shown to sales (for example "Direct to one line").
+  options      String[]
+  active       Boolean              @default(true)
+  sortOrder    Int                  @default(0)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  deletedAt    DateTime?
+  plans        Plan[]
+  techSections ServiceTechSection[]
+
+  @@unique([familyId, name])
+}
+
+model ServiceTechSection {
+  serviceId     String
+  techSectionId String
+  service       Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  techSection   TechSection @relation(fields: [techSectionId], references: [id], onDelete: Cascade)
+
+  @@id([serviceId, techSectionId])
+}
+
+model Plan {
+  id               String           @id @default(cuid())
+  serviceId        String
+  service          Service          @relation(fields: [serviceId], references: [id])
+  name             String
+  description      String?
+  priceType        PriceType
+  billingFrequency BillingFrequency @default(ONE_TIME)
+  // Catalog price in USD. Null for MARGIN_PERCENT (resale) and tiered plans.
+  unitPrice        Decimal?         @db.Decimal(14, 4)
+  unitLabel        String?
+  includedUnits    Int?
+  includedLabel    String?
+  // Markup % for resale plans. Null means use the default in settings.
+  marginPct        Decimal?         @db.Decimal(7, 3)
+  active           Boolean          @default(true)
+  sortOrder        Int              @default(0)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?
+  tiers            PriceTier[]
+
+  @@unique([serviceId, name])
+}
+
+model PriceTier {
+  id        String  @id @default(cuid())
+  planId    String
+  plan      Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  fromQty   Int
+  // Null means no upper limit.
+  toQty     Int?
+  unitPrice Decimal @db.Decimal(14, 4)
+
+  @@index([planId])
+}
+
+// ---------------------------------------------------------------------------
+// System
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String?
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model EmailOutbox {
+  id        String      @id @default(cuid())
+  to        String
+  cc        String?
+  subject   String
+  html      String
+  text      String?
+  status    EmailStatus @default(PENDING)
+  attempts  Int         @default(0)
+  lastError String?
+  sendAfter DateTime    @default(now())
+  sentAt    DateTime?
+  createdAt DateTime    @default(now())
+
+  @@index([status, sendAfter])
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  RESTORE
+  APPROVE
+  REJECT
+  STAGE_CHANGE
+  LOGIN
+  LOGIN_FAILED
+  PASSWORD_RESET
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  userId     String?
+  user       User?       @relation(fields: [userId], references: [id])
+  action     AuditAction
+  entityType String
+  entityId   String?
+  summary    String?
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime    @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
