@@ -18,6 +18,7 @@ services:
   app:
     build: .
     image: somtel-sales:latest
+    pull_policy: build
     restart: unless-stopped
     env_file: .env
     environment:
@@ -32,7 +33,9 @@ services:
         condition: service_healthy
 
   worker:
+    # Uses the image built by the "app" service. Never pulled from the internet.
     image: somtel-sales:latest
+    pull_policy: never
     restart: unless-stopped
     env_file: .env
     environment:
