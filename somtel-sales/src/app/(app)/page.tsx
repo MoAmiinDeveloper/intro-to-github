@@ -33,24 +33,24 @@ export default async function DashboardPage() {
         actions={
           can(user, "clients.create") && (
             <Link href="/clients/new" className={buttonClass("primary")}>
-              <Plus className="h-4 w-4" /> New client
+              <Plus className="h-4 w-4" /> New entity
             </Link>
           )
         }
       />
       {canClients && (
         <div className="mb-6 grid gap-4 sm:grid-cols-3">
-          <Stat label="My clients" value={mine} href={`/clients?owner=${user.id}`} />
-          <Stat label="Active clients" value={active} href="/clients?status=ACTIVE" />
+          <Stat label="My entities" value={mine} href={`/clients?owner=${user.id}`} />
+          <Stat label="Active entities" value={active} href="/clients?status=ACTIVE" />
           <Stat label="Prospects" value={prospects} href="/clients?status=PROSPECT" />
         </div>
       )}
       <div className="grid gap-5 lg:grid-cols-2">
         {canClients && (
           <Card>
-            <CardHeader title="Recently updated clients" actions={<Link href="/clients" className="text-sm text-navy hover:underline">All clients</Link>} />
+            <CardHeader title="Recently updated entities" actions={<Link href="/clients" className="text-sm text-navy hover:underline">All customers</Link>} />
             <CardBody className="divide-y divide-gray-100 p-0">
-              {recent.length === 0 && <p className="px-5 py-4 text-sm text-gray-500">No clients yet.</p>}
+              {recent.length === 0 && <p className="px-5 py-4 text-sm text-gray-500">No entities yet.</p>}
               {recent.map((c) => (
                 <Link key={c.id} href={`/clients/${c.id}`} className="flex justify-between px-5 py-2.5 text-sm hover:bg-gray-50">
                   <span className="font-medium text-navy">{c.name}</span>
@@ -78,12 +78,13 @@ function Stat({ label, value, href }: { label: string; value: number; href: stri
 }
 
 async function SetupChecklist() {
-  const [settings, techSections, company, users, servicesWithoutSections] = await Promise.all([
+  const [settings, techSections, company, users, servicesWithoutSections, distributors] = await Promise.all([
     getAllSettings(),
     prisma.techSection.count({ where: { active: true } }),
     prisma.companyProfile.findUnique({ where: { id: "company" } }),
     prisma.user.count({ where: { active: true, deletedAt: null } }),
     prisma.service.count({ where: { deletedAt: null, active: true, productType: { not: "IT" }, techSections: { none: {} } } }),
+    prisma.distributor.count({ where: { deletedAt: null, active: true } }),
   ]);
   const items = [
     { done: !!company?.logoPath, label: "Upload the Somtel logo", href: "/settings/company" },
@@ -91,6 +92,7 @@ async function SetupChecklist() {
     { done: users > 1, label: "Add the sales team and other users", href: "/settings/users" },
     { done: techSections > 0, label: "Add the real tech section names", href: "/settings/lists/tech-sections" },
     { done: techSections > 0 && servicesWithoutSections === 0, label: "Link every Somtel service to its tech sections", href: "/catalog" },
+    { done: distributors > 0, label: "Add distributors and link them to vendors", href: "/catalog/distributors" },
     { done: settings.get("quotes.vatPct") !== null, label: "Set the VAT %", href: "/settings/general" },
     { done: settings.get("costing.floorLicencePct") !== null && settings.get("costing.floorHardwarePct") !== null, label: "Set the minimum markup floors", href: "/settings/general" },
     { done: smtpConfigured(), label: "Set up SMTP email in .env", href: "/settings/email" },

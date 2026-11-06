@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 
-import { saveFamilyAction } from "../../actions";
+import { saveCategoryAction } from "../../actions";
 import { Checkbox, Field, Input, Textarea } from "@/components/ui/input";
 import { FormMessage, SubmitButton, Form, useActionForm } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 
-export function FamilyForm({ values }: { values: { id?: string; name?: string; description?: string | null; enabled: boolean; sortOrder: number } }) {
-  const form = useActionForm(saveFamilyAction);
+export function CategoryForm({ values }: { values: { id?: string; name?: string; description?: string | null; enabled: boolean; sortOrder: number } }) {
+  const form = useActionForm(saveCategoryAction);
   const state = form.state;
   return (
     <Form form={form}>

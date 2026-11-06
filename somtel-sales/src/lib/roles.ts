@@ -23,7 +23,9 @@ export type Permission =
   | "clients.viewAll"
   | "clients.create"
   | "clients.assignOwner"
-  | "audit.view";
+  | "audit.view"
+  | "costs.view"
+  | "costs.record";
 
 const PERMISSIONS: Record<Permission, Role[]> = {
   "settings.manage": ["ADMIN"],
@@ -55,6 +57,9 @@ const PERMISSIONS: Record<Permission, Role[]> = {
   "clients.create": ["ADMIN", "HEAD_OF_ENTERPRISE", "MANAGER", "ACCOUNT_MANAGER"],
   "clients.assignOwner": ["ADMIN", "HEAD_OF_ENTERPRISE", "MANAGER"],
   "audit.view": ["ADMIN", "HEAD_OF_ENTERPRISE"],
+  // Distributor costs are internal. Billing and Tech do not need them.
+  "costs.view": ["ADMIN", "HEAD_OF_ENTERPRISE", "MANAGER", "ACCOUNT_MANAGER", "ENTERPRISE_SUPPORT", "PROCUREMENT", "FINANCE"],
+  "costs.record": ["ADMIN", "HEAD_OF_ENTERPRISE", "MANAGER", "ACCOUNT_MANAGER", "ENTERPRISE_SUPPORT", "PROCUREMENT"],
 };
 
 export function hasPermission(roles: readonly Role[], permission: Permission): boolean {

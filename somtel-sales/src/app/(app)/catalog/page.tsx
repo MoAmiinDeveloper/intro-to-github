@@ -2,26 +2,22 @@ import Link from "next/link";
 import { Plus, Pencil } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { can, requirePermission } from "@/lib/session";
-import { getSetting } from "@/lib/settings";
 import { planPriceSummary } from "@/lib/catalog";
-import { ITEM_KIND_LABELS, PRODUCT_TYPE_LABELS } from "@/lib/pricing";
+import { PRODUCT_TYPE_LABELS } from "@/lib/pricing";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
 import { buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
-import { toggleFamilyAction } from "./actions";
+import { toggleCategoryAction } from "./actions";
+import { CatalogTabs } from "./tabs";
 
-export const metadata = { title: "Catalog" };
+export const metadata = { title: "Somtel services" };
 
 export default async function CatalogPage() {
   const user = await requirePermission("catalog.view");
   const admin = can(user, "catalog.manage");
-  const defaults = {
-    licence: (await getSetting<number>("costing.markupLicencePct")) ?? 10,
-    hardware: (await getSetting<number>("costing.markupHardwarePct")) ?? 20,
-  };
-  const families = await prisma.productFamily.findMany({
+  const categories = await prisma.serviceCategory.findMany({
     where: { deletedAt: null, ...(admin ? {} : { enabled: true }) },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     include: {
@@ -40,17 +36,18 @@ export default async function CatalogPage() {
     <>
       <PageHeader
         title="Products catalog"
-        description="Product family, then service, then plan and price."
+        description="Somtel services: category, then service, then plan. The price is set on the plan."
         actions={
           admin && (
-            <Link href="/catalog/families/new" className={buttonClass("primary")}>
-              <Plus className="h-4 w-4" /> New family
+            <Link href="/catalog/categories/new" className={buttonClass("primary")}>
+              <Plus className="h-4 w-4" /> New category
             </Link>
           )
         }
       />
+      <CatalogTabs active="services" />
       <div className="space-y-5">
-        {families.map((f) => (
+        {categories.map((f) => (
           <Card key={f.id} className={f.enabled ? "" : "opacity-75"}>
             <CardHeader
               title={
@@ -63,14 +60,14 @@ export default async function CatalogPage() {
               actions={
                 admin && (
                   <>
-                    <form action={toggleFamilyAction}>
+                    <form action={toggleCategoryAction}>
                       <input type="hidden" name="id" value={f.id} />
                       <button className={buttonClass("outline", "sm")}>{f.enabled ? "Switch off" : "Switch on"}</button>
                     </form>
-                    <Link href={`/catalog/families/${f.id}`} className={buttonClass("ghost", "sm")}>
+                    <Link href={`/catalog/categories/${f.id}`} className={buttonClass("ghost", "sm")}>
                       <Pencil className="h-3.5 w-3.5" /> Edit
                     </Link>
-                    <Link href={`/catalog/services/new?family=${f.id}`} className={buttonClass("navy", "sm")}>
+                    <Link href={`/catalog/services/new?category=${f.id}`} className={buttonClass("navy", "sm")}>
                       <Plus className="h-3.5 w-3.5" /> Service
                     </Link>
                   </>
@@ -97,13 +94,9 @@ export default async function CatalogPage() {
                           {s.name}
                         </Link>
                         {!s.active && <Badge className="ml-2">Inactive</Badge>}
-                        {s.vendor && <div className="text-xs text-gray-500">Vendor: {s.vendor}</div>}
                       </TD>
                       <TD>
-                        <div className="flex flex-wrap gap-1">
-                          <Badge tone={s.productType === "IT" ? "blue" : s.productType === "TRACKING" ? "amber" : "navy"}>{PRODUCT_TYPE_LABELS[s.productType]}</Badge>
-                          <Badge>{ITEM_KIND_LABELS[s.itemKind]}</Badge>
-                        </div>
+                        <Badge tone={s.productType === "TRACKING" ? "amber" : "navy"}>{PRODUCT_TYPE_LABELS[s.productType]}</Badge>
                       </TD>
                       <TD className="text-xs">
                         {s.techSections.length ? s.techSections.map((t) => t.techSection.name).join(", ") : <span className="text-gray-400">None</span>}
@@ -112,7 +105,7 @@ export default async function CatalogPage() {
                         <ul className="space-y-0.5 text-xs">
                           {s.plans.map((p) => (
                             <li key={p.id} className={p.active ? "" : "text-gray-400 line-through"}>
-                              <span className="font-medium text-gray-800">{p.name}:</span> {planPriceSummary(p, defaults, s.itemKind)}
+                              <span className="font-medium text-gray-800">{p.name}:</span> {planPriceSummary(p)}
                             </li>
                           ))}
                           {s.plans.length === 0 && <li className="text-gray-400">No plans</li>}

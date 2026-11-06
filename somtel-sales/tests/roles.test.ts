@@ -53,6 +53,13 @@ describe("permissions", () => {
     expect(hasPermission(["MANAGER"], "clients.viewAll")).toBe(false);
     expect(hasPermission(["HEAD_OF_ENTERPRISE"], "clients.viewAll")).toBe(true);
   });
+  it("distributor costs are hidden from Billing and Tech", () => {
+    expect(hasPermission(["BILLING"], "costs.view")).toBe(false);
+    expect(hasPermission(["TECH"], "costs.view")).toBe(false);
+    expect(hasPermission(["ACCOUNT_MANAGER"], "costs.view")).toBe(true);
+    expect(hasPermission(["PROCUREMENT"], "costs.record")).toBe(true);
+    expect(hasPermission(["FINANCE"], "costs.record")).toBe(false);
+  });
   it("roles add up when a user has more than one", () => {
     expect(hasPermission(["TECH", "ACCOUNT_MANAGER"], "clients.create")).toBe(true);
   });

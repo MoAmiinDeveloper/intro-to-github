@@ -13,6 +13,16 @@ export async function clientScope(user: CurrentUser): Promise<Prisma.ClientWhere
   return { id: "__none__" };
 }
 
+/** Which groups this user can see: groups they (or their team) own, or that hold an entity they can see. */
+export async function groupScope(user: CurrentUser): Promise<Prisma.ClientGroupWhereInput> {
+  if (hasPermission(user.roles, "clients.viewAll")) return {};
+  if (hasRole(user.roles, "MANAGER", "ACCOUNT_MANAGER")) {
+    const ids = [user.id, ...(await getTeamIds(user.id))];
+    return { OR: [{ ownerId: { in: ids } }, { entities: { some: { deletedAt: null, ownerId: { in: ids } } } }] };
+  }
+  return { id: "__none__" };
+}
+
 /** Owner, anyone above the owner in the reporting line, Head and Admin can edit. */
 export async function canEditClient(user: CurrentUser, client: { ownerId: string | null }): Promise<boolean> {
   if (hasRole(user.roles, "ADMIN", "HEAD_OF_ENTERPRISE")) return true;

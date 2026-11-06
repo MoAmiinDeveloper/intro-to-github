@@ -1,5 +1,5 @@
 import { Prisma, PrismaClient } from "@prisma/client";
-import { CLAUSES, FAMILIES, LOST_REASONS, PIPELINE_STAGES, SECTORS, SERVICES, TERMS_TEMPLATES } from "./seed-data";
+import { CLAUSES, IT_CATEGORIES, LOST_REASONS, PIPELINE_STAGES, SECTORS, SERVICE_CATEGORIES, SERVICES, TERMS_TEMPLATES, VENDORS } from "./seed-data";
 
 const prisma = new PrismaClient();
 
@@ -19,36 +19,42 @@ async function main() {
     create: { id: "company", name: "Somtel Enterprise", legalName: "Somtel", city: "Hargeisa", footerText: "Somtel Enterprise, part of the Dahabshiil Group" },
   });
 
-  const familyIds = new Map<string, string>();
-  for (const [i, f] of FAMILIES.entries()) {
-    const row = await prisma.productFamily.upsert({ where: { name: f.name }, update: {}, create: { ...f, sortOrder: (i + 1) * 10 } });
-    familyIds.set(f.name, row.id);
+  const categoryIds = new Map<string, string>();
+  for (const [i, c] of SERVICE_CATEGORIES.entries()) {
+    const row = await prisma.serviceCategory.upsert({ where: { name: c.name }, update: {}, create: { ...c, sortOrder: (i + 1) * 10 } });
+    categoryIds.set(c.name, row.id);
   }
 
   for (const [i, s] of SERVICES.entries()) {
-    const familyId = familyIds.get(s.family)!;
-    const { plans, family, ...fields } = s;
-    void family;
+    const categoryId = categoryIds.get(s.category)!;
+    const { plans, category, ...fields } = s;
+    void category;
     const service = await prisma.service.upsert({
-      where: { familyId_name: { familyId, name: s.name } },
+      where: { categoryId_name: { categoryId, name: s.name } },
       update: {},
-      create: { ...fields, options: fields.options ?? [], familyId, sortOrder: (i + 1) * 10 },
+      create: { ...fields, options: fields.options ?? [], categoryId, sortOrder: (i + 1) * 10 },
     });
     for (const [j, p] of plans.entries()) {
       const exists = await prisma.plan.findUnique({ where: { serviceId_name: { serviceId: service.id, name: p.name } } });
       if (exists) continue;
-      const { tiers, unitPrice, marginPct, ...planFields } = p;
+      const { tiers, unitPrice, ...planFields } = p;
       await prisma.plan.create({
         data: {
           ...planFields,
           serviceId: service.id,
           sortOrder: (j + 1) * 10,
           unitPrice: unitPrice === undefined ? null : new Prisma.Decimal(unitPrice),
-          marginPct: marginPct === undefined ? null : new Prisma.Decimal(marginPct),
           tiers: tiers ? { create: tiers.map((t) => ({ ...t, unitPrice: new Prisma.Decimal(t.unitPrice) })) } : undefined,
         },
       });
     }
+  }
+
+  for (const [i, name] of IT_CATEGORIES.entries()) {
+    await prisma.itCategory.upsert({ where: { name }, update: {}, create: { name, sortOrder: (i + 1) * 10 } });
+  }
+  for (const v of VENDORS) {
+    await prisma.vendor.upsert({ where: { name: v.name }, update: {}, create: v });
   }
 
   for (const t of TERMS_TEMPLATES) {

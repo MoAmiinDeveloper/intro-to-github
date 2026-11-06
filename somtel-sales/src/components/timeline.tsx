@@ -14,6 +14,8 @@ const ACTION_LABEL: Record<string, string> = {
 
 const FIELD_LABELS: Record<string, string> = {
   name: "Name",
+  groupId: "Group",
+  otherEntities: "Also works with",
   sectorId: "Sector",
   ownerId: "Owner",
   status: "Status",

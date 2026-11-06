@@ -17,36 +17,36 @@ const num = (label: string) =>
     .refine((s) => s === "" || Number.isFinite(Number(s)), `${label} must be a number.`)
     .transform((s) => (s === "" ? null : Number(s)));
 
-// ---------------- Families ----------------
+// ---------------- Categories ----------------
 
-const familySchema = z.object({
+const categorySchema = z.object({
   name: z.string().min(2, "Enter a name.").max(120),
   description: z.string().max(1000).nullable(),
   enabled: z.boolean(),
   sortOrder: z.coerce.number().int().min(0).max(9999),
 });
 
-export async function saveFamilyAction(_: ActionState, fd: FormData): Promise<ActionState> {
+export async function saveCategoryAction(_: ActionState, fd: FormData): Promise<ActionState> {
   const id = str(fd, "id");
   try {
     const user = await assertPermission("catalog.manage");
-    const data = familySchema.parse({
+    const data = categorySchema.parse({
       name: str(fd, "name"),
       description: optStr(fd, "description"),
       enabled: bool(fd, "enabled"),
       sortOrder: str(fd, "sortOrder") || "0",
     });
-    const dup = await prisma.productFamily.findFirst({ where: { name: { equals: data.name, mode: "insensitive" }, NOT: id ? { id } : undefined } });
-    if (dup) throw new UserError("A family with this name already exists.", { name: "Already exists." });
+    const dup = await prisma.serviceCategory.findFirst({ where: { name: { equals: data.name, mode: "insensitive" }, NOT: id ? { id } : undefined } });
+    if (dup) throw new UserError("A category with this name already exists.", { name: "Already exists." });
     await prisma.$transaction(async (tx) => {
       if (id) {
-        const before = await tx.productFamily.findUniqueOrThrow({ where: { id } });
-        const after = await tx.productFamily.update({ where: { id }, data });
+        const before = await tx.serviceCategory.findUniqueOrThrow({ where: { id } });
+        const after = await tx.serviceCategory.update({ where: { id }, data });
         const diff = changedFields(before, after);
-        if (diff.changed) await audit(tx, { userId: user.id, action: "UPDATE", entityType: "ProductFamily", entityId: id, summary: `Updated family ${after.name}`, before: diff.before, after: diff.after });
+        if (diff.changed) await audit(tx, { userId: user.id, action: "UPDATE", entityType: "ServiceCategory", entityId: id, summary: `Updated category ${after.name}`, before: diff.before, after: diff.after });
       } else {
-        const f = await tx.productFamily.create({ data });
-        await audit(tx, { userId: user.id, action: "CREATE", entityType: "ProductFamily", entityId: f.id, summary: `Created family ${f.name}`, after: f });
+        const f = await tx.serviceCategory.create({ data });
+        await audit(tx, { userId: user.id, action: "CREATE", entityType: "ServiceCategory", entityId: f.id, summary: `Created category ${f.name}`, after: f });
       }
     });
   } catch (e) {
@@ -56,13 +56,13 @@ export async function saveFamilyAction(_: ActionState, fd: FormData): Promise<Ac
   redirect("/catalog");
 }
 
-export async function toggleFamilyAction(fd: FormData) {
+export async function toggleCategoryAction(fd: FormData) {
   const user = await assertPermission("catalog.manage");
   const id = str(fd, "id");
-  const f = await prisma.productFamily.findUniqueOrThrow({ where: { id } });
+  const f = await prisma.serviceCategory.findUniqueOrThrow({ where: { id } });
   await prisma.$transaction(async (tx) => {
-    await tx.productFamily.update({ where: { id }, data: { enabled: !f.enabled } });
-    await audit(tx, { userId: user.id, action: "UPDATE", entityType: "ProductFamily", entityId: id, summary: `${f.enabled ? "Switched off" : "Switched on"} family ${f.name}`, before: { enabled: f.enabled }, after: { enabled: !f.enabled } });
+    await tx.serviceCategory.update({ where: { id }, data: { enabled: !f.enabled } });
+    await audit(tx, { userId: user.id, action: "UPDATE", entityType: "ServiceCategory", entityId: id, summary: `${f.enabled ? "Switched off" : "Switched on"} category ${f.name}`, before: { enabled: f.enabled }, after: { enabled: !f.enabled } });
   });
   revalidatePath("/catalog");
 }
@@ -70,12 +70,10 @@ export async function toggleFamilyAction(fd: FormData) {
 // ---------------- Services ----------------
 
 const serviceSchema = z.object({
-  familyId: z.string().min(1, "Choose a family."),
+  categoryId: z.string().min(1, "Choose a category."),
   name: z.string().min(2, "Enter a name.").max(160),
   description: z.string().max(2000).nullable(),
-  vendor: z.string().max(120).nullable(),
-  productType: z.enum(["IT", "NON_IT", "TRACKING"]),
-  itemKind: z.enum(["LICENCE", "HARDWARE", "SERVICE"]),
+  productType: z.enum(["NON_IT", "TRACKING"]),
   options: z.array(z.string().max(200)).max(20),
   active: z.boolean(),
   sortOrder: z.coerce.number().int().min(0).max(9999),
@@ -88,12 +86,10 @@ export async function saveServiceAction(_: ActionState, fd: FormData): Promise<A
   try {
     const user = await assertPermission("catalog.manage");
     const data = serviceSchema.parse({
-      familyId: str(fd, "familyId"),
+      categoryId: str(fd, "categoryId"),
       name: str(fd, "name"),
       description: optStr(fd, "description"),
-      vendor: optStr(fd, "vendor"),
       productType: str(fd, "productType"),
-      itemKind: str(fd, "itemKind"),
       options: str(fd, "options")
         .split("\n")
         .map((s) => s.trim())
@@ -104,9 +100,9 @@ export async function saveServiceAction(_: ActionState, fd: FormData): Promise<A
     });
     const { techSectionIds, ...fields } = data;
     const dup = await prisma.service.findFirst({
-      where: { familyId: fields.familyId, name: { equals: fields.name, mode: "insensitive" }, deletedAt: null, NOT: id ? { id } : undefined },
+      where: { categoryId: fields.categoryId, name: { equals: fields.name, mode: "insensitive" }, deletedAt: null, NOT: id ? { id } : undefined },
     });
-    if (dup) throw new UserError("This family already has a service with this name.", { name: "Already exists in this family." });
+    if (dup) throw new UserError("This category already has a service with this name.", { name: "Already exists in this category." });
 
     await prisma.$transaction(async (tx) => {
       if (id) {
@@ -147,7 +143,7 @@ export async function deleteServiceAction(fd: FormData) {
 
 // ---------------- Plans ----------------
 
-const PRICE_TYPES = ["ONE_TIME", "MONTHLY", "PER_UNIT", "PER_MINUTE", "PER_SMS_TIERED", "MARGIN_PERCENT"] as const;
+const PRICE_TYPES = ["ONE_TIME", "MONTHLY", "PER_UNIT", "PER_MINUTE", "PER_SMS_TIERED"] as const;
 
 const planSchema = z
   .object({
@@ -160,14 +156,12 @@ const planSchema = z
     unitLabel: z.string().max(60).nullable(),
     includedUnits: num("Included units"),
     includedLabel: z.string().max(60).nullable(),
-    marginPct: num("Markup"),
     active: z.boolean(),
     sortOrder: z.coerce.number().int().min(0).max(9999),
   })
   .superRefine((p, ctx) => {
-    const needsPrice = !["PER_SMS_TIERED", "MARGIN_PERCENT"].includes(p.priceType);
+    const needsPrice = p.priceType !== "PER_SMS_TIERED";
     if (needsPrice && (p.unitPrice === null || p.unitPrice < 0)) ctx.addIssue({ code: "custom", path: ["unitPrice"], message: "Enter a price of 0 or more." });
-    if (p.marginPct !== null && (p.marginPct < 0 || p.marginPct > 1000)) ctx.addIssue({ code: "custom", path: ["marginPct"], message: "Markup must be between 0 and 1000." });
     if (p.includedUnits !== null && (!Number.isInteger(p.includedUnits) || p.includedUnits < 0))
       ctx.addIssue({ code: "custom", path: ["includedUnits"], message: "Use a whole number." });
   });
@@ -200,7 +194,6 @@ export async function savePlanAction(_: ActionState, fd: FormData): Promise<Acti
       unitLabel: optStr(fd, "unitLabel"),
       includedUnits: str(fd, "includedUnits"),
       includedLabel: optStr(fd, "includedLabel"),
-      marginPct: str(fd, "marginPct"),
       active: bool(fd, "active"),
       sortOrder: str(fd, "sortOrder") || "0",
     });
@@ -208,8 +201,7 @@ export async function savePlanAction(_: ActionState, fd: FormData): Promise<Acti
     // Keep the data consistent with the price type.
     if (data.priceType === "MONTHLY") data.billingFrequency = "MONTHLY";
     if (data.priceType === "ONE_TIME") data.billingFrequency = "ONE_TIME";
-    if (data.priceType === "PER_SMS_TIERED" || data.priceType === "MARGIN_PERCENT") data.unitPrice = null;
-    if (data.priceType !== "MARGIN_PERCENT") data.marginPct = null;
+    if (data.priceType === "PER_SMS_TIERED") data.unitPrice = null;
 
     const tiers = data.priceType === "PER_SMS_TIERED" ? readTiers(fd) : [];
     if (data.priceType === "PER_SMS_TIERED") {
@@ -224,7 +216,7 @@ export async function savePlanAction(_: ActionState, fd: FormData): Promise<Acti
     const fields = {
       ...data,
       unitPrice: data.unitPrice === null ? null : new Prisma.Decimal(data.unitPrice),
-      marginPct: data.marginPct === null ? null : new Prisma.Decimal(data.marginPct),
+      marginPct: null,
       includedUnits: data.includedUnits,
     };
     const tierRows = tiers.map((t) => ({ fromQty: t.fromQty, toQty: t.toQty, unitPrice: new Prisma.Decimal(t.unitPrice) }));

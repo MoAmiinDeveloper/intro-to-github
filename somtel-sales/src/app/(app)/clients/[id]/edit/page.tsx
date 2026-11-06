@@ -8,14 +8,14 @@ import { ClientForm } from "../../client-form";
 import { updateClientAction } from "../../actions";
 import { clientFormOptions } from "../../form-data";
 
-export const metadata = { title: "Edit client" };
+export const metadata = { title: "Edit entity" };
 
 export default async function EditClientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requirePermission("clients.view");
   const client = await prisma.client.findFirst({ where: { AND: [{ id, deletedAt: null }, await clientScope(user)] } });
   if (!client || !(await canEditClient(user, client))) notFound();
-  const { sectors, owners } = await clientFormOptions(user);
+  const { sectors, owners, groups } = await clientFormOptions(user);
   const canAssign = hasPermission(user.roles, "clients.assignOwner");
   // Make sure the current owner is always in the list.
   if (client.ownerId && !owners.some((o) => o.id === client.ownerId)) {
@@ -26,12 +26,13 @@ export default async function EditClientPage({ params }: { params: Promise<{ id:
     <div className="max-w-3xl">
       <PageHeader
         title={`Edit ${client.name}`}
-        breadcrumbs={[{ label: "Clients", href: "/clients" }, { label: client.name, href: `/clients/${id}` }, { label: "Edit" }]}
+        breadcrumbs={[{ label: "Customers", href: "/clients" }, { label: client.name, href: `/clients/${id}` }, { label: "Edit" }]}
       />
       <ClientForm
         action={updateClientAction}
         values={client}
         sectors={sectors}
+        groups={groups}
         owners={owners}
         canAssignOwner={canAssign}
         cancelHref={`/clients/${id}`}

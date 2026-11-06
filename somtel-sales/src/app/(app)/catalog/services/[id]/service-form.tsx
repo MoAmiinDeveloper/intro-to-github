@@ -7,12 +7,10 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 
 interface Values {
   id?: string;
-  familyId: string;
+  categoryId: string;
   name?: string;
   description?: string | null;
-  vendor?: string | null;
   productType: string;
-  itemKind: string;
   options: string[];
   active: boolean;
   sortOrder: number;
@@ -21,11 +19,11 @@ interface Values {
 
 export function ServiceForm({
   values,
-  families,
+  categories,
   techSections,
 }: {
   values: Values;
-  families: { id: string; name: string }[];
+  categories: { id: string; name: string }[];
   techSections: { id: string; name: string }[];
 }) {
   const form = useActionForm(saveServiceAction);
@@ -38,9 +36,9 @@ export function ServiceForm({
         <CardHeader title="Service details" />
         <CardBody className="space-y-4">
           <FormMessage state={state} />
-          <Field label="Family" htmlFor="familyId" required error={fe.familyId}>
-            <Select id="familyId" name="familyId" defaultValue={values.familyId}>
-              {families.map((f) => (
+          <Field label="Category" htmlFor="categoryId" required error={fe.categoryId}>
+            <Select id="categoryId" name="categoryId" defaultValue={values.categoryId}>
+              {categories.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.name}
                 </option>
@@ -50,24 +48,11 @@ export function ServiceForm({
           <Field label="Service name" htmlFor="name" required error={fe.name}>
             <Input id="name" name="name" defaultValue={values.name ?? ""} required />
           </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Product type" htmlFor="productType" help="IT is vendor resale. Non-IT is a Somtel service.">
-              <Select id="productType" name="productType" defaultValue={values.productType}>
-                <option value="NON_IT">Non-IT (Somtel service)</option>
-                <option value="IT">IT (vendor resale)</option>
-                <option value="TRACKING">Vehicle tracking</option>
-              </Select>
-            </Field>
-            <Field label="Item kind" htmlFor="itemKind" help="Hardware lines can have customs. Licences cannot.">
-              <Select id="itemKind" name="itemKind" defaultValue={values.itemKind}>
-                <option value="SERVICE">Service</option>
-                <option value="LICENCE">Licence</option>
-                <option value="HARDWARE">Hardware</option>
-              </Select>
-            </Field>
-          </div>
-          <Field label="Vendor" htmlFor="vendor" help="For resale items, for example the brand you buy from.">
-            <Input id="vendor" name="vendor" defaultValue={values.vendor ?? ""} />
+          <Field label="Type" htmlFor="productType" help="IT products from vendors are in the IT catalog, not here.">
+            <Select id="productType" name="productType" defaultValue={values.productType}>
+              <option value="NON_IT">Non-IT (Somtel service)</option>
+              <option value="TRACKING">Vehicle tracking</option>
+            </Select>
           </Field>
           <Field label="Description" htmlFor="description">
             <Textarea id="description" name="description" defaultValue={values.description ?? ""} />

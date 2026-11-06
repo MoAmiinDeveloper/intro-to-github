@@ -22,7 +22,6 @@ interface Values {
   unitLabel?: string | null;
   includedUnits?: string;
   includedLabel?: string | null;
-  marginPct?: string;
   active: boolean;
   sortOrder: number;
   tiers: TierRow[];
@@ -36,7 +35,6 @@ export function PlanForm({ serviceId, values }: { serviceId: string; values: Val
   const fe = state.fieldErrors ?? {};
 
   const isTiered = priceType === "PER_SMS_TIERED";
-  const isMargin = priceType === "MARGIN_PERCENT";
   const fixedFrequency = priceType === "MONTHLY" ? "MONTHLY" : priceType === "ONE_TIME" ? "ONE_TIME" : null;
 
   const updateTier = (i: number, key: keyof TierRow, v: string) => setTiers((t) => t.map((row, j) => (j === i ? { ...row, [key]: v } : row)));
@@ -64,7 +62,9 @@ export function PlanForm({ serviceId, values }: { serviceId: string; values: Val
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Price type" htmlFor="priceType">
               <Select id="priceType" name="priceType" value={priceType} onChange={(e) => setPriceType(e.target.value)}>
-                {Object.entries(PRICE_TYPE_LABELS).map(([v, l]) => (
+                {Object.entries(PRICE_TYPE_LABELS)
+                  .filter(([v]) => v !== "MARGIN_PERCENT")
+                  .map(([v, l]) => (
                   <option key={v} value={v}>
                     {l}
                   </option>
@@ -86,7 +86,7 @@ export function PlanForm({ serviceId, values }: { serviceId: string; values: Val
             </Field>
           </div>
 
-          {!isTiered && !isMargin && (
+          {!isTiered && (
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Price (USD)" htmlFor="unitPrice" required error={fe.unitPrice}>
                 <Input id="unitPrice" name="unitPrice" inputMode="decimal" defaultValue={values.unitPrice ?? ""} placeholder="0.00" />
@@ -101,17 +101,6 @@ export function PlanForm({ serviceId, values }: { serviceId: string; values: Val
                 <Input id="includedLabel" name="includedLabel" defaultValue={values.includedLabel ?? ""} />
               </Field>
             </div>
-          )}
-
-          {isMargin && (
-            <Field
-              label="Markup % on supplier cost"
-              htmlFor="marginPct"
-              error={fe.marginPct}
-              help="Leave empty to use the default from settings (10% licences, 20% hardware). Sales can change it per line."
-            >
-              <Input id="marginPct" name="marginPct" inputMode="decimal" defaultValue={values.marginPct ?? ""} className="w-40" />
-            </Field>
           )}
 
           {isTiered && (

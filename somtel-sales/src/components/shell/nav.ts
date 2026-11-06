@@ -9,7 +9,7 @@ export interface NavItem {
 
 export const NAV: NavItem[] = [
   { href: "/", label: "My dashboard", icon: "home" },
-  { href: "/clients", label: "Clients", icon: "clients", permission: "clients.view" },
+  { href: "/clients", label: "Customers", icon: "clients", permission: "clients.view" },
   { href: "/catalog", label: "Catalog", icon: "catalog", permission: "catalog.view" },
   { href: "/notifications", label: "Notifications", icon: "bell" },
   { href: "/settings", label: "Settings", icon: "settings", permission: "settings.manage" },

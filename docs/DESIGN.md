@@ -1,7 +1,36 @@
-# Somtel Enterprise Sales System: Design v2 (for approval)
+# Somtel Enterprise Sales System: Design v3
 
-Status: **draft v2, waiting for OK**. Updated with the answers from the business (round 1).
-No application code is written yet.
+Status: **approved**. Phase 1 is built. v3 adds the customer and catalog structure agreed after Phase 1 (see section 0).
+
+## 0. Changes in v3 (agreed after Phase 1)
+
+### 0.1 Somtel services catalog: Category -> Service -> Plan -> price
+`ProductFamily` is renamed `ServiceCategory`. The price lives on the plan (one price, or volume bands).
+This catalog now holds only Somtel's own services (Non-IT and the tracking platform fee). IT resale items moved to the IT catalog.
+
+### 0.2 Customers: Group -> Entity -> Person
+| Table | Key fields | Notes |
+|---|---|---|
+| `ClientGroup` | name, sectorId, ownerId, notes | Optional. Sector and owner are defaults copied to new entities (each entity can change them). Option to push them to all entities. |
+| `Client` (entity) | + groupId | The legal company quoted, contracted and billed. Quotes, orders, services and renewals always belong to an entity. |
+| `Contact` (person) | clientId (home entity) | |
+| `ContactEntityLink` | contactId, clientId | A person can also work with other entities **in the same group** (for example a group CFO). Links are removed if an entity leaves the group. |
+
+### 0.3 IT catalog: Vendor -> Category (shared) -> Product -> Sub-product
+| Table | Key fields | Notes |
+|---|---|---|
+| `Vendor` | name, website, notes | Fortinet, Sophos, Microsoft, Ubiquiti, tracker brand |
+| `ItCategory` | name, sortOrder | **One shared list** for all vendors (Firewall and security, Wireless, ...) |
+| `ItProduct` | vendorId, categoryId, name, description | For example FortiGate 60F |
+| `ItSubProduct` | productId, name, sku, kind (HARDWARE / SOFTWARE), quoteDescription, unitLabel, termMonths, markupPct | Hardware: default markup 20%, customs allowed. Software: default 10%, no customs, term for renewals. No fixed price. |
+| `Distributor` | name, country, currency, paymentTerms, remittanceNotes, contacts | Never shown on client documents |
+| `VendorDistributor` | vendorId, distributorId, partnerLevel, accountNumber, notes | Many to many |
+| `DistributorPrice` | distributorId, subProductId, unitCost, currency, exchangeRate, quotedAt, reference | Cost history. The last cost per distributor is shown, cheapest first. A cost can only come from a distributor linked to the product's vendor. Phase 3 costings will add rows automatically. |
+
+Trackers, speed limiters and dashcams moved to the IT catalog (vendor "Tracker vendor (sample)" in demo data, category "Vehicle tracking hardware"). The $1.40 platform fee stays in the services catalog.
+
+Who sees costs: Admin, Head, Manager, Account Managers, Enterprise Support, Procurement, Finance. Billing and Tech do not.
+Who records costs: the same, except Finance.
 
 Stack: Next.js (App Router) + TypeScript, PostgreSQL + Prisma, Tailwind + shadcn/ui,
 Auth.js (email + password now, Microsoft 365 later), Docker Compose, `docx` for Word,

@@ -28,30 +28,31 @@ enum Role {
 }
 
 model User {
-  id             String    @id @default(cuid())
-  name           String
-  email          String    @unique
-  phone          String?
-  title          String?
-  passwordHash   String
-  active         Boolean   @default(true)
-  managerId      String?
-  manager        User?     @relation("ReportingLine", fields: [managerId], references: [id])
-  reports        User[]    @relation("ReportingLine")
-  failedLogins   Int       @default(0)
-  lockedUntil    DateTime?
-  lastLoginAt    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  deletedAt      DateTime?
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  phone        String?
+  title        String?
+  passwordHash String
+  active       Boolean   @default(true)
+  managerId    String?
+  manager      User?     @relation("ReportingLine", fields: [managerId], references: [id])
+  reports      User[]    @relation("ReportingLine")
+  failedLogins Int       @default(0)
+  lockedUntil  DateTime?
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
 
-  roles          UserRole[]
-  sectors        UserSector[]
-  techSections   UserTechSection[]
-  ownedClients   Client[]           @relation("ClientOwner")
-  resetTokens    PasswordResetToken[]
-  notifications  Notification[]
-  auditLogs      AuditLog[]
+  roles         UserRole[]
+  sectors       UserSector[]
+  techSections  UserTechSection[]
+  ownedClients  Client[]             @relation("ClientOwner")
+  ownedGroups   ClientGroup[]        @relation("GroupOwner")
+  resetTokens   PasswordResetToken[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
 }
 
 model UserRole {
@@ -73,14 +74,15 @@ model PasswordResetToken {
 }
 
 model Sector {
-  id        String       @id @default(cuid())
-  name      String       @unique
-  active    Boolean      @default(true)
-  sortOrder Int          @default(0)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id        String        @id @default(cuid())
+  name      String        @unique
+  active    Boolean       @default(true)
+  sortOrder Int           @default(0)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
   users     UserSector[]
   clients   Client[]
+  groups    ClientGroup[]
 }
 
 model UserSector {
@@ -213,65 +215,93 @@ enum ClientStatus {
   INACTIVE
 }
 
-model Client {
-  id          String       @id @default(cuid())
+model ClientGroup {
+  id          String    @id @default(cuid())
   name        String
+  // Defaults copied to new entities in the group (each entity can change them).
   sectorId    String?
-  sector      Sector?      @relation(fields: [sectorId], references: [id])
-  industry    String?
-  address     String?
-  city        String?
-  phone       String?
-  email       String?
-  website     String?
+  sector      Sector?   @relation(fields: [sectorId], references: [id])
   ownerId     String?
-  owner       User?        @relation("ClientOwner", fields: [ownerId], references: [id])
-  status      ClientStatus @default(PROSPECT)
+  owner       User?     @relation("GroupOwner", fields: [ownerId], references: [id])
   notes       String?
-  upsellNotes String?
   createdById String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
-  contacts    Contact[]
+  entities    Client[]
+
+  @@index([name])
+}
+
+/// An entity: the legal company Somtel quotes, contracts and bills.
+model Client {
+  id            String              @id @default(cuid())
+  name          String
+  groupId       String?
+  group         ClientGroup?        @relation(fields: [groupId], references: [id])
+  sectorId      String?
+  sector        Sector?             @relation(fields: [sectorId], references: [id])
+  industry      String?
+  address       String?
+  city          String?
+  phone         String?
+  email         String?
+  website       String?
+  ownerId       String?
+  owner         User?               @relation("ClientOwner", fields: [ownerId], references: [id])
+  status        ClientStatus        @default(PROSPECT)
+  notes         String?
+  upsellNotes   String?
+  createdById   String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  deletedAt     DateTime?
+  contacts      Contact[]
+  linkedPersons ContactEntityLink[]
 
   @@index([name])
   @@index([ownerId])
   @@index([sectorId])
+  @@index([groupId])
 }
 
+/// A person. Belongs to one entity, and can also work with other entities in the same group.
 model Contact {
-  id              String    @id @default(cuid())
+  id              String              @id @default(cuid())
   clientId        String
-  client          Client    @relation(fields: [clientId], references: [id])
+  client          Client              @relation(fields: [clientId], references: [id])
+  otherEntities   ContactEntityLink[]
   name            String
   title           String?
   phone           String?
   email           String?
-  isDecisionMaker Boolean   @default(false)
+  isDecisionMaker Boolean             @default(false)
   notes           String?
   createdById     String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
   deletedAt       DateTime?
 
   @@index([clientId])
 }
 
+model ContactEntityLink {
+  contactId String
+  clientId  String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  client    Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, clientId])
+}
+
 // ---------------------------------------------------------------------------
-// Catalog: Product Family -> Service -> Plan -> Price (tiers)
+// Somtel services catalog: Category -> Service -> Plan -> Price (on the plan)
 // ---------------------------------------------------------------------------
 
 enum ProductType {
   IT
   NON_IT
   TRACKING
-}
-
-enum ItemKind {
-  LICENCE
-  HARDWARE
-  SERVICE
 }
 
 enum PriceType {
@@ -288,7 +318,7 @@ enum BillingFrequency {
   MONTHLY
 }
 
-model ProductFamily {
+model ServiceCategory {
   id          String    @id @default(cuid())
   name        String    @unique
   description String?
@@ -302,13 +332,12 @@ model ProductFamily {
 
 model Service {
   id           String               @id @default(cuid())
-  familyId     String
-  family       ProductFamily        @relation(fields: [familyId], references: [id])
+  categoryId   String
+  category     ServiceCategory      @relation(fields: [categoryId], references: [id])
   name         String
   description  String?
-  vendor       String?
+  // NON_IT (Somtel service) or TRACKING. IT resale items live in the IT catalog.
   productType  ProductType
-  itemKind     ItemKind
   // Service shapes or options shown to sales (for example "Direct to one line").
   options      String[]
   active       Boolean              @default(true)
@@ -319,7 +348,7 @@ model Service {
   plans        Plan[]
   techSections ServiceTechSection[]
 
-  @@unique([familyId, name])
+  @@unique([categoryId, name])
 }
 
 model ServiceTechSection {
@@ -366,6 +395,144 @@ model PriceTier {
   unitPrice Decimal @db.Decimal(14, 4)
 
   @@index([planId])
+}
+
+// ---------------------------------------------------------------------------
+// IT catalog: Vendor -> Category (shared) -> Product -> Sub-product (hardware or software)
+// Distributors sell vendors' products to Somtel. Costs never appear on client documents.
+// ---------------------------------------------------------------------------
+
+enum ItKind {
+  HARDWARE
+  SOFTWARE
+}
+
+model Vendor {
+  id           String              @id @default(cuid())
+  name         String              @unique
+  website      String?
+  notes        String?
+  active       Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  deletedAt    DateTime?
+  products     ItProduct[]
+  distributors VendorDistributor[]
+}
+
+model ItCategory {
+  id        String      @id @default(cuid())
+  name      String      @unique
+  active    Boolean     @default(true)
+  sortOrder Int         @default(0)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  products  ItProduct[]
+}
+
+model ItProduct {
+  id          String         @id @default(cuid())
+  vendorId    String
+  vendor      Vendor         @relation(fields: [vendorId], references: [id])
+  categoryId  String
+  category    ItCategory     @relation(fields: [categoryId], references: [id])
+  name        String
+  description String?
+  active      Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  deletedAt   DateTime?
+  subProducts ItSubProduct[]
+
+  @@unique([vendorId, name])
+  @@index([categoryId])
+}
+
+model ItSubProduct {
+  id               String             @id @default(cuid())
+  productId        String
+  product          ItProduct          @relation(fields: [productId], references: [id])
+  name             String
+  sku              String?
+  kind             ItKind
+  // Text printed on the client quote.
+  quoteDescription String?
+  unitLabel        String?
+  // Subscription length for software (used for renewals).
+  termMonths       Int?
+  // Null means use the default markup in settings for its kind.
+  markupPct        Decimal?           @db.Decimal(7, 3)
+  active           Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  deletedAt        DateTime?
+  costs            DistributorPrice[]
+
+  @@unique([productId, name])
+  @@index([sku])
+}
+
+model Distributor {
+  id              String               @id @default(cuid())
+  name            String               @unique
+  country         String?
+  currency        String               @default("USD")
+  paymentTerms    String?
+  remittanceNotes String?
+  website         String?
+  notes           String?
+  active          Boolean              @default(true)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  deletedAt       DateTime?
+  contacts        DistributorContact[]
+  vendors         VendorDistributor[]
+  costs           DistributorPrice[]
+}
+
+model DistributorContact {
+  id            String      @id @default(cuid())
+  distributorId String
+  distributor   Distributor @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  name          String
+  title         String?
+  phone         String?
+  email         String?
+  createdAt     DateTime    @default(now())
+}
+
+/// Which distributors carry which vendors (many to many).
+model VendorDistributor {
+  vendorId      String
+  distributorId String
+  vendor        Vendor      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  distributor   Distributor @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  partnerLevel  String?
+  accountNumber String?
+  notes         String?
+  createdAt     DateTime    @default(now())
+
+  @@id([vendorId, distributorId])
+}
+
+/// Cost history: one row each time a distributor quotes a sub-product.
+model DistributorPrice {
+  id            String       @id @default(cuid())
+  distributorId String
+  distributor   Distributor  @relation(fields: [distributorId], references: [id])
+  subProductId  String
+  subProduct    ItSubProduct @relation(fields: [subProductId], references: [id])
+  unitCost      Decimal      @db.Decimal(14, 4)
+  currency      String
+  // 1 USD = exchangeRate x currency. 1 for USD.
+  exchangeRate  Decimal      @db.Decimal(14, 6)
+  quotedAt      DateTime
+  reference     String?
+  notes         String?
+  createdById   String?
+  createdAt     DateTime     @default(now())
+
+  @@index([subProductId, distributorId, quotedAt])
 }
 
 // ---------------------------------------------------------------------------

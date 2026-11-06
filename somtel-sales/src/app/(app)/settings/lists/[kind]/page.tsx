@@ -15,7 +15,9 @@ export default async function ListPage({ params }: { params: Promise<{ kind: str
       ? await prisma.sector.findMany({ orderBy })
       : kind === "tech-sections"
         ? await prisma.techSection.findMany({ orderBy })
-        : await prisma.lostReason.findMany({ orderBy });
+        : kind === "it-categories"
+          ? await prisma.itCategory.findMany({ orderBy })
+          : await prisma.lostReason.findMany({ orderBy });
 
   return (
     <>

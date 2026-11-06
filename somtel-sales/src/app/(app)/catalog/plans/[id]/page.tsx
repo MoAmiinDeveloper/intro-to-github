@@ -22,7 +22,7 @@ export default async function PlanPage({ params, searchParams }: { params: Promi
     <div className="max-w-3xl">
       <PageHeader
         title={plan ? `Edit ${plan.name}` : "New plan"}
-        breadcrumbs={[{ label: "Catalog", href: "/catalog" }, { label: service.name, href: `/catalog/services/${service.id}` }, { label: plan ? plan.name : "New plan" }]}
+        breadcrumbs={[{ label: "Somtel services", href: "/catalog" }, { label: service.name, href: `/catalog/services/${service.id}` }, { label: plan ? plan.name : "New plan" }]}
         actions={
           plan && (
             <form action={deletePlanAction}>
@@ -48,12 +48,11 @@ export default async function PlanPage({ params, searchParams }: { params: Promi
                 unitLabel: plan.unitLabel,
                 includedUnits: plan.includedUnits?.toString() ?? "",
                 includedLabel: plan.includedLabel,
-                marginPct: plan.marginPct?.toString() ?? "",
                 active: plan.active,
                 sortOrder: plan.sortOrder,
                 tiers: plan.tiers.map((t) => ({ fromQty: String(t.fromQty), toQty: t.toQty === null ? "" : String(t.toQty), unitPrice: t.unitPrice.toString() })),
               }
-            : { priceType: service.productType === "IT" ? "MARGIN_PERCENT" : "MONTHLY", billingFrequency: "MONTHLY", active: true, sortOrder: 0, tiers: [] }
+            : { priceType: "MONTHLY", billingFrequency: "MONTHLY", active: true, sortOrder: 0, tiers: [] }
         }
       />
     </div>

@@ -3,9 +3,8 @@ import { notFound } from "next/navigation";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { can, requirePermission } from "@/lib/session";
-import { getSetting } from "@/lib/settings";
 import { planPriceSummary } from "@/lib/catalog";
-import { BILLING_FREQUENCY_LABELS, ITEM_KIND_LABELS, PRICE_TYPE_LABELS, PRODUCT_TYPE_LABELS } from "@/lib/pricing";
+import { BILLING_FREQUENCY_LABELS, PRICE_TYPE_LABELS, PRODUCT_TYPE_LABELS } from "@/lib/pricing";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
 import { buttonClass } from "@/components/ui/button";
@@ -17,9 +16,9 @@ import { ServiceForm } from "./service-form";
 
 export const metadata = { title: "Service" };
 
-export default async function ServicePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ family?: string }> }) {
+export default async function ServicePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ category?: string }> }) {
   const { id } = await params;
-  const { family: familyParam } = await searchParams;
+  const { category: categoryParam } = await searchParams;
   const user = await requirePermission("catalog.view");
   const admin = can(user, "catalog.manage");
   const isNew = id === "new";
@@ -30,29 +29,24 @@ export default async function ServicePage({ params, searchParams }: { params: Pr
     : await prisma.service.findFirst({
         where: { id, deletedAt: null },
         include: {
-          family: true,
+          category: true,
           techSections: { include: { techSection: true } },
           plans: { where: { deletedAt: null }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: { tiers: true } },
         },
       });
   if (!isNew && !service) notFound();
 
-  const [families, techSections] = await Promise.all([
-    prisma.productFamily.findMany({ where: { deletedAt: null }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
+  const [categories, techSections] = await Promise.all([
+    prisma.serviceCategory.findMany({ where: { deletedAt: null }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     prisma.techSection.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
   ]);
-  const defaults = {
-    licence: (await getSetting<number>("costing.markupLicencePct")) ?? 10,
-    hardware: (await getSetting<number>("costing.markupHardwarePct")) ?? 20,
-  };
-
-  const familyName = service?.family.name ?? families.find((f) => f.id === familyParam)?.name;
+  const categoryName = service?.category.name ?? categories.find((f) => f.id === categoryParam)?.name;
 
   return (
     <>
       <PageHeader
         title={service ? service.name : "New service"}
-        breadcrumbs={[{ label: "Catalog", href: "/catalog" }, ...(familyName ? [{ label: familyName }] : []), { label: service ? service.name : "New service" }]}
+        breadcrumbs={[{ label: "Somtel services", href: "/catalog" }, ...(categoryName ? [{ label: categoryName }] : []), { label: service ? service.name : "New service" }]}
         actions={
           admin &&
           service && (
@@ -73,9 +67,9 @@ export default async function ServicePage({ params, searchParams }: { params: Pr
               values={
                 service
                   ? { ...service, techSectionIds: service.techSections.map((t) => t.techSectionId) }
-                  : { familyId: familyParam ?? families[0]?.id ?? "", productType: "NON_IT", itemKind: "SERVICE", options: [], active: true, sortOrder: 0, techSectionIds: [] }
+                  : { categoryId: categoryParam ?? categories[0]?.id ?? "", productType: "NON_IT", options: [], active: true, sortOrder: 0, techSectionIds: [] }
               }
-              families={families}
+              categories={categories}
               techSections={techSections}
             />
           ) : (
@@ -83,11 +77,7 @@ export default async function ServicePage({ params, searchParams }: { params: Pr
               <Card>
                 <CardHeader title="Service details" />
                 <CardBody className="space-y-3 text-sm">
-                  <div className="flex flex-wrap gap-1">
-                    <Badge tone="navy">{PRODUCT_TYPE_LABELS[service.productType]}</Badge>
-                    <Badge>{ITEM_KIND_LABELS[service.itemKind]}</Badge>
-                  </div>
-                  {service.vendor && <p>Vendor: {service.vendor}</p>}
+                  <Badge tone="navy">{PRODUCT_TYPE_LABELS[service.productType]}</Badge>
                   {service.description && <p className="whitespace-pre-wrap text-gray-700">{service.description}</p>}
                   {service.options.length > 0 && (
                     <div>
@@ -142,7 +132,7 @@ export default async function ServicePage({ params, searchParams }: { params: Pr
                         {PRICE_TYPE_LABELS[p.priceType]}
                         <div className="text-gray-500">{BILLING_FREQUENCY_LABELS[p.billingFrequency]} billing</div>
                       </TD>
-                      <TD className="text-xs">{planPriceSummary(p, defaults, service.itemKind)}</TD>
+                      <TD className="text-xs">{planPriceSummary(p)}</TD>
                       {admin && (
                         <TD className="text-right">
                           <Link href={`/catalog/plans/${p.id}`} className={buttonClass("ghost", "icon")} title="Edit plan">

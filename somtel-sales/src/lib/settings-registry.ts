@@ -34,12 +34,12 @@ export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday",
 
 export const SETTINGS: SettingDef[] = [
   // Costing
-  { key: "costing.markupLicencePct", group: "costing", label: "Default markup for licences (%)", type: "percent", default: 10, min: 0, max: 1000 },
+  { key: "costing.markupLicencePct", group: "costing", label: "Default markup for software and licences (%)", type: "percent", default: 10, min: 0, max: 1000 },
   { key: "costing.markupHardwarePct", group: "costing", label: "Default markup for hardware (%)", type: "percent", default: 20, min: 0, max: 1000 },
   {
     key: "costing.floorLicencePct",
     group: "costing",
-    label: "Minimum markup for licences (%)",
+    label: "Minimum markup for software and licences (%)",
     help: "Below this, the quote needs Manager approval. Leave empty if not set yet.",
     type: "percent",
     default: null,

@@ -17,7 +17,7 @@ import { deleteClientAction, deleteContactAction } from "../actions";
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const c = await prisma.client.findUnique({ where: { id }, select: { name: true } });
-  return { title: c?.name ?? "Client" };
+  return { title: c?.name ?? "Entity" };
 }
 
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
@@ -28,23 +28,33 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
     where: { AND: [{ id, deletedAt: null }, await clientScope(user)] },
     include: {
       sector: true,
+      group: true,
       owner: { select: { name: true, email: true } },
       contacts: { where: { deletedAt: null }, orderBy: [{ isDecisionMaker: "desc" }, { name: "asc" }] },
+      linkedPersons: { where: { contact: { deletedAt: null } }, include: { contact: { include: { client: { select: { id: true, name: true } } } } } },
     },
   });
   if (!client) notFound();
+  const groupEntities = client.groupId
+    ? await prisma.client.findMany({ where: { groupId: client.groupId, deletedAt: null, NOT: { id } }, select: { id: true, name: true }, orderBy: { name: "asc" } })
+    : [];
+  const shared = client.linkedPersons.map((l) => l.contact);
   const [editable, deletable] = await Promise.all([canEditClient(user, client), canDeleteClient(user, client)]);
 
   const tabs = [
     { key: "overview", label: "Overview" },
-    { key: "contacts", label: `Contacts (${client.contacts.length})` },
+    { key: "contacts", label: `People (${client.contacts.length + shared.length})` },
     { key: "timeline", label: "Timeline" },
   ];
 
   return (
     <>
       <PageHeader
-        breadcrumbs={[{ label: "Clients", href: "/clients" }, { label: client.name }]}
+        breadcrumbs={[
+          { label: "Customers", href: "/clients" },
+          ...(client.group ? [{ label: client.group.name, href: `/clients/groups/${client.group.id}` }] : []),
+          { label: client.name },
+        ]}
         title={
           <span className="flex flex-wrap items-center gap-3">
             {client.name}
@@ -79,6 +89,18 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
             <CardHeader title="Details" />
             <CardBody>
               <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs font-medium uppercase text-gray-500">Group</dt>
+                  <dd className="mt-0.5">
+                    {client.group ? (
+                      <Link href={`/clients/groups/${client.group.id}`} className="text-navy hover:underline">
+                        {client.group.name}
+                      </Link>
+                    ) : (
+                      <span className="text-gray-400">Standalone (no group)</span>
+                    )}
+                  </dd>
+                </div>
                 <Item label="Account owner" value={client.owner?.name ?? "No owner"} />
                 <Item label="Sector" value={client.sector?.name} />
                 <Item label="Industry" value={client.industry} />
@@ -97,9 +119,9 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
           </Card>
           <div className="space-y-4">
             <Card>
-              <CardHeader title="Key contacts" actions={<Link href={`/clients/${id}?tab=contacts`} className="text-sm text-navy hover:underline">All</Link>} />
+              <CardHeader title="Key people" actions={<Link href={`/clients/${id}?tab=contacts`} className="text-sm text-navy hover:underline">All</Link>} />
               <CardBody className="space-y-3">
-                {client.contacts.length === 0 && <p className="text-sm text-gray-500">No contacts yet.</p>}
+                {client.contacts.length === 0 && <p className="text-sm text-gray-500">No people yet.</p>}
                 {client.contacts.slice(0, 4).map((c) => (
                   <div key={c.id} className="text-sm">
                     <div className="flex items-center gap-1 font-medium">
@@ -125,7 +147,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
       {tab === "contacts" && (
         <div className="space-y-4">
           {client.contacts.length === 0 ? (
-            <EmptyState title="No contacts yet" />
+            <EmptyState title="No people at this entity yet" />
           ) : (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {client.contacts.map((c) => (
@@ -140,13 +162,13 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                     </div>
                     {editable && (
                       <div className="flex gap-1">
-                        <Link href={`/clients/${id}/contacts/${c.id}/edit`} className={buttonClass("ghost", "icon")} title="Edit contact">
+                        <Link href={`/clients/${id}/contacts/${c.id}/edit`} className={buttonClass("ghost", "icon")} title="Edit person">
                           <Pencil className="h-4 w-4" />
                         </Link>
                         <form action={deleteContactAction}>
                           <input type="hidden" name="clientId" value={id} />
                           <input type="hidden" name="contactId" value={c.id} />
-                          <ConfirmSubmit variant="ghost" size="icon" message={`Delete contact ${c.name}?`} pendingText="" title="Delete contact">
+                          <ConfirmSubmit variant="ghost" size="icon" message={`Delete ${c.name}?`} pendingText="" title="Delete person">
                             <Trash2 className="h-4 w-4 text-red-600" />
                           </ConfirmSubmit>
                         </form>
@@ -170,11 +192,31 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
               ))}
             </div>
           )}
+          {shared.length > 0 && (
+            <Card>
+              <CardHeader title="People from other entities in the group" description="Based at another entity, and also work with this one." />
+              <CardBody className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {shared.map((c) => (
+                  <div key={c.id} className="rounded-md border border-gray-100 p-3 text-sm">
+                    <div className="flex items-center gap-2 font-medium">
+                      {c.name}
+                      {c.isDecisionMaker && <Badge tone="gold">Decision maker</Badge>}
+                    </div>
+                    <div className="text-gray-500">{c.title}</div>
+                    <div className="text-gray-600">{[c.phone, c.email].filter(Boolean).join(" · ")}</div>
+                    <Link href={`/clients/${c.client.id}?tab=contacts`} className="mt-1 inline-block text-xs text-navy hover:underline">
+                      Based at {c.client.name}
+                    </Link>
+                  </div>
+                ))}
+              </CardBody>
+            </Card>
+          )}
           {editable && (
             <Card>
-              <CardHeader title="Add a contact" />
+              <CardHeader title="Add a person" />
               <CardBody>
-                <ContactForm clientId={id} />
+                <ContactForm clientId={id} groupEntities={groupEntities} />
               </CardBody>
             </Card>
           )}
@@ -183,7 +225,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
 
       {tab === "timeline" && (
         <Card>
-          <CardHeader title="Timeline" description="Changes to this client and its contacts. Calls, meetings and deals are added in the next phase." />
+          <CardHeader title="Timeline" description="Changes to this entity and its people. Calls, meetings and deals are added in the next phase." />
           <CardBody>
             <Timeline
               where={{

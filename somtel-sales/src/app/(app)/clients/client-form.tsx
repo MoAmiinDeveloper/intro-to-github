@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
 import type { ActionState } from "@/lib/action";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
@@ -11,6 +12,7 @@ import { Card, CardBody } from "@/components/ui/card";
 export interface ClientFormValues {
   id?: string;
   name?: string;
+  groupId?: string | null;
   sectorId?: string | null;
   industry?: string | null;
   address?: string | null;
@@ -29,12 +31,14 @@ export function ClientForm({
   values,
   sectors,
   owners,
+  groups,
   canAssignOwner,
   cancelHref,
 }: {
   action: (s: ActionState, fd: FormData) => Promise<ActionState>;
   values: ClientFormValues;
   sectors: { id: string; name: string }[];
+  groups: { id: string; name: string; sectorId: string | null; ownerId: string | null }[];
   owners: { id: string; name: string }[];
   canAssignOwner: boolean;
   cancelHref: string;
@@ -42,6 +46,16 @@ export function ClientForm({
   const form = useActionForm(action);
   const state = form.state;
   const fe = state.fieldErrors ?? {};
+  const [groupId, setGroupId] = useState(values.groupId ?? "");
+  const [sectorId, setSectorId] = useState(values.sectorId ?? "");
+  const [ownerId, setOwnerId] = useState(values.ownerId ?? "");
+  const onGroupChange = (id: string) => {
+    setGroupId(id);
+    const g = groups.find((x) => x.id === id);
+    // Copy the group's defaults. The user can still change them.
+    if (g?.sectorId) setSectorId(g.sectorId);
+    if (g?.ownerId && canAssignOwner && owners.some((o) => o.id === g.ownerId)) setOwnerId(g.ownerId);
+  };
   return (
     <Form form={form}>
       {values.id && <input type="hidden" name="id" value={values.id} />}
@@ -49,11 +63,21 @@ export function ClientForm({
         <CardBody className="space-y-5">
           <FormMessage state={state} />
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Client name" htmlFor="name" required error={fe.name} className="md:col-span-2">
+            <Field label="Entity name" htmlFor="name" required error={fe.name} help="The legal company name used on quotes and contracts.">
               <Input id="name" name="name" defaultValue={values.name ?? ""} required autoFocus />
             </Field>
+            <Field label="Group" htmlFor="groupId" error={fe.groupId} help="Optional. Choosing a group copies its sector and owner.">
+              <Select id="groupId" name="groupId" value={groupId} onChange={(e) => onGroupChange(e.target.value)}>
+                <option value="">No group (standalone)</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
             <Field label="Sector" htmlFor="sectorId" error={fe.sectorId}>
-              <Select id="sectorId" name="sectorId" defaultValue={values.sectorId ?? ""}>
+              <Select id="sectorId" name="sectorId" value={sectorId} onChange={(e) => setSectorId(e.target.value)}>
                 <option value="">Not set</option>
                 {sectors.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -76,9 +100,9 @@ export function ClientForm({
               label="Account owner"
               htmlFor="ownerId"
               error={fe.ownerId}
-              help={canAssignOwner ? undefined : "You are the owner of clients you create."}
+              help={canAssignOwner ? undefined : "You are the owner of entities you create."}
             >
-              <Select id="ownerId" name="ownerId" defaultValue={values.ownerId ?? ""} disabled={!canAssignOwner}>
+              <Select id="ownerId" name="ownerId" value={ownerId} onChange={(e) => setOwnerId(e.target.value)} disabled={!canAssignOwner}>
                 {owners.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.name}
@@ -109,7 +133,7 @@ export function ClientForm({
             </Field>
           </div>
           <div className="flex gap-2">
-            <SubmitButton>Save client</SubmitButton>
+            <SubmitButton>Save entity</SubmitButton>
             <Link href={cancelHref} className={buttonClass("outline")}>
               Cancel
             </Link>

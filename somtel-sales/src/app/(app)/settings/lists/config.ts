@@ -8,6 +8,14 @@ export const LIST_KINDS = {
     hasEmail: true,
     help: "Teams that activate services. Each catalog service is linked to the sections it needs. The email is the team mailbox for order notifications.",
   },
+  "it-categories": {
+    title: "IT categories",
+    singular: "IT category",
+    model: "itCategory",
+    entity: "ItCategory",
+    hasEmail: false,
+    help: "One shared list for all vendors, for example Firewall, Wireless, Switching. Used to group IT products and in reports.",
+  },
   "lost-reasons": { title: "Lost reasons", singular: "lost reason", model: "lostReason", entity: "LostReason", hasEmail: false, help: "Shown when a deal is moved to Lost. A reason is required." },
 } as const;
 

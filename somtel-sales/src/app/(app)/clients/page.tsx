@@ -13,12 +13,13 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/pagination";
 import { formatDate } from "@/lib/utils";
 import { restoreClientAction } from "./actions";
+import { CustomerTabs } from "./tabs";
 
-export const metadata = { title: "Clients" };
+export const metadata = { title: "Customers" };
 
 const PAGE_SIZE = 50;
 
-type SP = { q?: string; sector?: string; status?: string; owner?: string; page?: string; deleted?: string };
+type SP = { q?: string; sector?: string; status?: string; owner?: string; group?: string; page?: string; deleted?: string };
 
 export default async function ClientsPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
@@ -35,6 +36,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
         ? {
             OR: [
               { name: { contains: q, mode: "insensitive" } },
+              { group: { name: { contains: q, mode: "insensitive" } } },
               { city: { contains: q, mode: "insensitive" } },
               { industry: { contains: q, mode: "insensitive" } },
               { contacts: { some: { deletedAt: null, OR: [{ name: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }, { phone: { contains: q } }] } } },
@@ -44,13 +46,14 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
       sp.sector ? { sectorId: sp.sector } : {},
       sp.status && sp.status in CLIENT_STATUS_LABELS ? { status: sp.status as keyof typeof CLIENT_STATUS_LABELS } : {},
       sp.owner ? { ownerId: sp.owner } : {},
+      sp.group ? { groupId: sp.group } : {},
     ],
   };
 
-  const [clients, total, sectors, owners] = await Promise.all([
+  const [clients, total, sectors, owners, groups] = await Promise.all([
     prisma.client.findMany({
       where,
-      include: { sector: true, owner: { select: { name: true } }, _count: { select: { contacts: { where: { deletedAt: null } } } } },
+      include: { sector: true, group: { select: { id: true, name: true } }, owner: { select: { name: true } }, _count: { select: { contacts: { where: { deletedAt: null } } } } },
       orderBy: { name: "asc" },
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
@@ -62,32 +65,42 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
+    prisma.clientGroup.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
-  const hasFilters = !!(q || sp.sector || sp.status || sp.owner);
+  const hasFilters = !!(q || sp.sector || sp.status || sp.owner || sp.group);
 
   return (
     <>
       <PageHeader
-        title="Clients"
-        description={`${total} ${total === 1 ? "client" : "clients"}${showDeleted ? " (deleted)" : ""}`}
+        title="Customers"
+        description={`${total} ${total === 1 ? "entity" : "entities"}${showDeleted ? " (deleted)" : ""}`}
         actions={
           can(user, "clients.create") && (
             <Link href="/clients/new" className={buttonClass("primary")}>
-              <Plus className="h-4 w-4" /> New client
+              <Plus className="h-4 w-4" /> New entity
             </Link>
           )
         }
       />
 
+      <CustomerTabs active="entities" />
       <Card className="mb-4 p-3">
         <form className="flex flex-wrap items-center gap-2">
-          <Input name="q" defaultValue={q} placeholder="Search name, city, industry or contact" className="w-72" />
+          <Input name="q" defaultValue={q} placeholder="Search entity, group, city or person" className="w-72" />
           <Select name="sector" defaultValue={sp.sector ?? ""} className="w-48">
             <option value="">All sectors</option>
             {sectors.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
+              </option>
+            ))}
+          </Select>
+          <Select name="group" defaultValue={sp.group ?? ""} className="w-48">
+            <option value="">All groups</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
               </option>
             ))}
           </Select>
@@ -116,27 +129,28 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
           )}
           {can(user, "settings.manage") && (
             <Link href={showDeleted ? "/clients" : "/clients?deleted=1"} className="ml-auto text-xs text-gray-500 hover:text-navy">
-              {showDeleted ? "Show active clients" : "Show deleted clients"}
+              {showDeleted ? "Show active entities" : "Show deleted entities"}
             </Link>
           )}
         </form>
       </Card>
 
       {clients.length === 0 ? (
-        <EmptyState title={hasFilters ? "No clients match these filters" : "No clients yet"}>
-          {!hasFilters && can(user, "clients.create") && "Click New client to add the first one."}
+        <EmptyState title={hasFilters ? "No entities match these filters" : "No entities yet"}>
+          {!hasFilters && can(user, "clients.create") && "Click New entity to add the first one."}
         </EmptyState>
       ) : (
         <Card>
           <Table>
             <THead>
               <tr>
-                <TH>Client</TH>
+                <TH>Entity</TH>
+                <TH>Group</TH>
                 <TH>Sector</TH>
                 <TH>City</TH>
                 <TH>Owner</TH>
                 <TH>Status</TH>
-                <TH className="text-right">Contacts</TH>
+                <TH className="text-right">People</TH>
                 <TH>{showDeleted ? "" : "Added"}</TH>
               </tr>
             </THead>
@@ -152,6 +166,15 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                       </Link>
                     )}
                     {c.industry && <div className="text-xs text-gray-500">{c.industry}</div>}
+                  </TD>
+                  <TD>
+                    {c.group ? (
+                      <Link href={`/clients/groups/${c.group.id}`} className="text-gray-800 hover:text-navy hover:underline">
+                        {c.group.name}
+                      </Link>
+                    ) : (
+                      <span className="text-gray-400">None</span>
+                    )}
                   </TD>
                   <TD>{c.sector?.name ?? <span className="text-gray-400">Not set</span>}</TD>
                   <TD>{c.city}</TD>

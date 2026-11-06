@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { can, requireUser } from "@/lib/session";
-import { clientScope } from "@/lib/clients";
+import { clientScope, groupScope } from "@/lib/clients";
 import { PageHeader, EmptyState } from "@/components/ui/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 
@@ -13,7 +13,13 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const user = await requireUser();
   if (!q || !can(user, "clients.view")) return <PageHeader title="Search" description="Type in the search box at the top." />;
   const scope = await clientScope(user);
-  const [clients, contacts] = await Promise.all([
+  const [groups, clients, contacts] = await Promise.all([
+    prisma.clientGroup.findMany({
+      where: { AND: [await groupScope(user), { deletedAt: null, name: { contains: q, mode: "insensitive" } }] },
+      take: 20,
+      orderBy: { name: "asc" },
+      include: { _count: { select: { entities: { where: { deletedAt: null } } } } },
+    }),
     prisma.client.findMany({
       where: { AND: [scope, { deletedAt: null }, { OR: [{ name: { contains: q, mode: "insensitive" } }, { city: { contains: q, mode: "insensitive" } }, { industry: { contains: q, mode: "insensitive" } }] }] },
       take: 20,
@@ -34,11 +40,24 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   return (
     <>
       <PageHeader title={`Results for "${q}"`} />
-      {clients.length === 0 && contacts.length === 0 && <EmptyState title="Nothing found" />}
+      {groups.length === 0 && clients.length === 0 && contacts.length === 0 && <EmptyState title="Nothing found" />}
       <div className="grid gap-5 lg:grid-cols-2">
+        {groups.length > 0 && (
+          <Card>
+            <CardHeader title={`Groups (${groups.length})`} />
+            <div className="divide-y divide-gray-100">
+              {groups.map((g) => (
+                <Link key={g.id} href={`/clients/groups/${g.id}`} className="block px-5 py-2.5 text-sm hover:bg-gray-50">
+                  <span className="font-medium text-navy">{g.name}</span>
+                  <span className="ml-2 text-gray-500">{g._count.entities} entities</span>
+                </Link>
+              ))}
+            </div>
+          </Card>
+        )}
         {clients.length > 0 && (
           <Card>
-            <CardHeader title={`Clients (${clients.length})`} />
+            <CardHeader title={`Entities (${clients.length})`} />
             <div className="divide-y divide-gray-100">
               {clients.map((c) => (
                 <Link key={c.id} href={`/clients/${c.id}`} className="block px-5 py-2.5 text-sm hover:bg-gray-50">
@@ -51,7 +70,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         )}
         {contacts.length > 0 && (
           <Card>
-            <CardHeader title={`Contacts (${contacts.length})`} />
+            <CardHeader title={`People (${contacts.length})`} />
             <div className="divide-y divide-gray-100">
               {contacts.map((c) => (
                 <Link key={c.id} href={`/clients/${c.client.id}?tab=contacts`} className="block px-5 py-2.5 text-sm hover:bg-gray-50">

@@ -17,7 +17,20 @@ export interface ContactValues {
   notes?: string | null;
 }
 
-export function ContactForm({ clientId, values = {}, cancelHref }: { clientId: string; values?: ContactValues; cancelHref?: string }) {
+export function ContactForm({
+  clientId,
+  values = {},
+  cancelHref,
+  groupEntities = [],
+  linkedIds = [],
+}: {
+  clientId: string;
+  values?: ContactValues;
+  cancelHref?: string;
+  /** Other entities in the same group, which this person can also work with. */
+  groupEntities?: { id: string; name: string }[];
+  linkedIds?: string[];
+}) {
   const form = useActionForm(saveContactAction);
   const state = form.state;
   const ref = useRef<HTMLFormElement>(null);
@@ -48,8 +61,19 @@ export function ContactForm({ clientId, values = {}, cancelHref }: { clientId: s
         </Field>
       </div>
       <Checkbox name="isDecisionMaker" label="Decision maker" defaultChecked={values.isDecisionMaker ?? false} />
+      {groupEntities.length > 0 && (
+        <fieldset className="space-y-2">
+          <input type="hidden" name="manageLinks" value="1" />
+          <legend className="text-sm font-medium text-gray-700">Also works with these entities in the group</legend>
+          <div className="flex flex-wrap gap-4">
+            {groupEntities.map((e) => (
+              <Checkbox key={e.id} name="linkedEntityIds" value={e.id} label={e.name} defaultChecked={linkedIds.includes(e.id)} />
+            ))}
+          </div>
+        </fieldset>
+      )}
       <div className="flex gap-2">
-        <SubmitButton>{values.id ? "Save contact" : "Add contact"}</SubmitButton>
+        <SubmitButton>{values.id ? "Save person" : "Add person"}</SubmitButton>
         {cancelHref && (
           <Link href={cancelHref} className={buttonClass("outline")}>
             Cancel

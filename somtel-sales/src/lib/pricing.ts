@@ -65,5 +65,5 @@ export const PRICE_TYPE_LABELS = {
 } as const;
 
 export const PRODUCT_TYPE_LABELS = { IT: "IT (vendor resale)", NON_IT: "Non-IT (Somtel service)", TRACKING: "Vehicle tracking" } as const;
-export const ITEM_KIND_LABELS = { LICENCE: "Licence", HARDWARE: "Hardware", SERVICE: "Service" } as const;
+export const IT_KIND_LABELS = { HARDWARE: "Hardware", SOFTWARE: "Software" } as const;
 export const BILLING_FREQUENCY_LABELS = { ONE_TIME: "One-time", MONTHLY: "Monthly" } as const;

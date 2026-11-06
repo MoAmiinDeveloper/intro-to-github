@@ -11,7 +11,7 @@ The design (data model, screens, confirmed business rules) is in [`../docs/DESIG
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Sign in, roles, settings, branding, clients and contacts, catalog with seed price cards | **Done** |
+| 1 | Sign in, roles, settings, branding, customers (groups, entities, people), catalogs (Somtel services; IT vendors, products and distributors) | **Done** |
 | 2 | Pipeline (kanban + table), activities, follow-ups, stale deals | Next |
 | 3 | Costing calculator, quotes and proposals, approvals, PDF and Word | |
 | 4 | Non-IT orders (Billing then tech sections), IT orders (12 stages) | |
@@ -94,12 +94,15 @@ Then sign in and follow the **Admin setup** checklist on the dashboard:
 1. **Settings → Company and logo**: upload the real logo (it replaces `public/logo.png` everywhere) and fill in address and phone.
 2. **Settings → Users and roles**: add the team. Set **Reports to** to build the reporting line (Sector Managers → Manager → Head of Enterprise).
 3. **Settings → Tech sections**: add the real tech section names and their team mailboxes.
-4. **Catalog**: open each Somtel service and tick the tech sections that activate it.
-5. **Settings → Business rules**: set the VAT % and the minimum markup floors when they are confirmed.
+4. **Catalog → Somtel services**: open each service and tick the tech sections that activate it.
+5. **Catalog → Distributors**: add your distributors, then on each **Vendor** page link the distributors you buy that vendor from.
+6. **Catalog → IT products**: add products and their hardware or software sub-products (part numbers, terms).
+7. **Settings → Business rules**: set the VAT % and the minimum markup floors when they are confirmed.
 
 ## 5. Demo data (testing only)
 
-Do **not** run this on the live server. It adds sample users, clients, contacts and sample tech sections.
+Do **not** run this on the live server. It adds sample users, customer groups, entities and people, sample tech sections,
+sample distributors, example IT products and sample distributor costs. Running it again only adds what is missing.
 
 ```bash
 docker compose exec app npx tsx prisma/seed-demo.ts
@@ -151,6 +154,8 @@ docker compose run --rm --no-deps -T --user root --entrypoint "" -v "$(pwd)/back
 ```bash
 git pull
 ```
+
+On Windows, in PowerShell, run the same commands from the `somtel-sales` folder.
 
 ```bash
 docker compose up -d --build
@@ -213,12 +218,16 @@ tests/                      Unit tests
 
 | Role | Phase 1 access |
 |---|---|
-| Admin | Everything: settings, users, catalog, all clients, audit log |
-| Head of Enterprise | All clients, audit log, catalog (read) |
-| Manager | Own clients and everyone below them in the reporting line |
-| Sector / Account Manager | Own clients only |
-| Enterprise Support, Procurement, Finance, Billing | All clients (read only) and catalog (read), because they process orders for every client |
-| Tech Section | No clients or catalog. They will see only their activation tasks (Phase 4) |
+| Admin | Everything: settings, users, catalogs, all customers, audit log |
+| Head of Enterprise | All customers, audit log, catalogs (read), distributor costs |
+| Manager | Own customers and everyone below them in the reporting line, distributor costs |
+| Sector / Account Manager | Own customers only, distributor costs |
+| Enterprise Support, Procurement | All customers (read), catalogs (read), view and record distributor costs |
+| Finance | All customers (read), catalogs (read), view distributor costs |
+| Billing | All customers (read), catalogs (read). No distributor costs |
+| Tech Section | No customers or catalogs. They will see only their activation tasks (Phase 4) |
 
-A client can be edited by its owner, anyone above the owner in the reporting line, the Head of Enterprise and Admin.
-Managers, the Head and Admin can delete (soft delete; Admin can restore from **Clients → Show deleted clients**).
+Customers are organised as **Group → Entity → Person**. An entity is the legal company you quote and bill; a group is optional.
+A group can be seen by anyone who owns it or can see one of its entities.
+An entity (or group) can be edited by its owner, anyone above the owner in the reporting line, the Head of Enterprise and Admin.
+Managers, the Head and Admin can delete (soft delete; Admin can restore from **Customers → Show deleted entities**).

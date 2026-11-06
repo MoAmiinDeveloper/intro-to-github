@@ -3,7 +3,7 @@
  * All demo users get the password in DEMO_PASSWORD (default: Somtel2026demo).
  */
 import bcrypt from "bcryptjs";
-import { PrismaClient, type Role } from "@prisma/client";
+import { Prisma, PrismaClient, type ItKind, type Role } from "@prisma/client";
 
 const prisma = new PrismaClient();
 const PASSWORD = process.env.DEMO_PASSWORD || "Somtel2026demo";
@@ -18,9 +18,61 @@ const TECH_SECTIONS = [
 const SERVICE_SECTIONS: Record<string, string[]> = {
   "A2P SMS": ["VAS Platforms (sample)"],
   "Hosted IVR / Short Code": ["VAS Platforms (sample)", "Core Network (sample)"],
-  "Tracking platform": ["IT and Cloud (sample)"],
-  "Tracking devices": ["Field Installation (sample)"],
+  "Tracking platform": ["IT and Cloud (sample)", "Field Installation (sample)"],
 };
+
+/** Groups and the entities in them. Entities not listed here stay standalone. */
+const GROUPS: { name: string; sector: string; owner: string; entities: string[] }[] = [
+  { name: "Sahan Group", sector: "Logistics", owner: "am1", entities: ["Sahan Logistics Ltd", "Sahan Trading"] },
+  { name: "Barwaaqo Holdings", sector: "Financial Institutions", owner: "am2", entities: ["Barwaaqo Microfinance", "Barwaaqo Insurance Services"] },
+];
+
+const DISTRIBUTORS = [
+  { name: "Gulf IT Distribution (sample)", country: "United Arab Emirates", currency: "AED", paymentTerms: "100% advance", vendors: ["Fortinet", "Sophos", "Ubiquiti"] },
+  { name: "East Africa Tech Supply (sample)", country: "Kenya", currency: "USD", paymentTerms: "50% advance, 50% on delivery", vendors: ["Fortinet", "Microsoft"] },
+  { name: "Fleet Devices Trading (sample)", country: "United Arab Emirates", currency: "USD", paymentTerms: "100% advance", vendors: ["Tracker vendor (sample)"] },
+];
+
+/** Example IT products. Part numbers are left empty on purpose; fill in the real ones. */
+const IT_PRODUCTS: { vendor: string; category: string; name: string; subs: { name: string; kind: ItKind; unit?: string; term?: number; costs?: [string, number, string][] }[] }[] = [
+  {
+    vendor: "Fortinet",
+    category: "Firewall and security",
+    name: "FortiGate 60F",
+    subs: [
+      { name: "FortiGate 60F appliance", kind: "HARDWARE", unit: "device", costs: [["Gulf IT Distribution (sample)", 2200, "AED"], ["East Africa Tech Supply (sample)", 640, "USD"]] },
+      { name: "FortiGuard UTP bundle, 1 year", kind: "SOFTWARE", unit: "licence", term: 12, costs: [["Gulf IT Distribution (sample)", 1650, "AED"]] },
+    ],
+  },
+  {
+    vendor: "Sophos",
+    category: "Endpoint security",
+    name: "Sophos Intercept X",
+    subs: [{ name: "Intercept X Advanced, 1 year", kind: "SOFTWARE", unit: "user", term: 12 }],
+  },
+  {
+    vendor: "Microsoft",
+    category: "Productivity and collaboration",
+    name: "Microsoft 365 Business Standard",
+    subs: [{ name: "Business Standard licence, 1 year", kind: "SOFTWARE", unit: "user", term: 12, costs: [["East Africa Tech Supply (sample)", 150, "USD"]] }],
+  },
+  {
+    vendor: "Ubiquiti",
+    category: "Wireless",
+    name: "UniFi U6 Pro",
+    subs: [{ name: "U6 Pro access point", kind: "HARDWARE", unit: "device", costs: [["Gulf IT Distribution (sample)", 590, "AED"]] }],
+  },
+  {
+    vendor: "Tracker vendor (sample)",
+    category: "Vehicle tracking hardware",
+    name: "Vehicle tracking devices",
+    subs: [
+      { name: "GPS tracker", kind: "HARDWARE", unit: "device" },
+      { name: "Speed limiter", kind: "HARDWARE", unit: "device" },
+      { name: "Dashcam", kind: "HARDWARE", unit: "device" },
+    ],
+  },
+];
 
 interface DemoUser {
   key: string;
@@ -59,6 +111,8 @@ const CLIENTS: { name: string; sector: string; industry: string; owner: string; 
   { name: "Regional Health Office (sample)", sector: "Public Sector", industry: "Health", owner: "am3", status: "ACTIVE", contacts: [["Halima Abdillahi", "Admin Officer", "+252 63 410 0011", true], ["Jama Hirsi", "ICT Officer", "+252 63 410 0012", false]] },
   { name: "Burao Water Utility (sample)", sector: "Public Sector", industry: "Utilities", owner: "am3", status: "PROSPECT", contacts: [["Khadra Yasin", "Finance Manager", "+252 63 410 0013", true]] },
   { name: "Raad Transport Co", sector: "Logistics", industry: "Passenger transport", owner: "am1", status: "PROSPECT", contacts: [["Guuleed Awale", "Fleet Manager", "+252 63 410 0014", true]] },
+  { name: "Sahan Trading", sector: "Logistics", industry: "Import and wholesale", owner: "am1", status: "ACTIVE", contacts: [["Sagal Ismail", "Finance Manager", "+252 63 410 0015", false]] },
+  { name: "Barwaaqo Insurance Services", sector: "Financial Institutions", industry: "Insurance", owner: "am2", status: "PROSPECT", contacts: [["Mahad Yusuf", "General Manager", "+252 63 410 0016", true]] },
 ];
 
 async function main() {
@@ -70,7 +124,7 @@ async function main() {
     sectionIds.set(t.name, row.id);
   }
   for (const [serviceName, sections] of Object.entries(SERVICE_SECTIONS)) {
-    const service = await prisma.service.findFirst({ where: { name: serviceName } });
+    const service = await prisma.service.findFirst({ where: { name: serviceName, deletedAt: null } });
     if (!service) continue;
     for (const s of sections) {
       await prisma.serviceTechSection.upsert({
@@ -131,6 +185,65 @@ async function main() {
       },
     });
     await prisma.auditLog.create({ data: { userId: ownerId, action: "CREATE", entityType: "Client", entityId: client.id, summary: `Created client ${client.name}` } });
+  }
+
+  // ---- Groups ----
+  for (const g of GROUPS) {
+    const group =
+      (await prisma.clientGroup.findFirst({ where: { name: g.name, deletedAt: null } })) ??
+      (await prisma.clientGroup.create({ data: { name: g.name, sectorId: sectors.get(g.sector), ownerId: userIds.get(g.owner)! } }));
+    await prisma.client.updateMany({ where: { name: { in: g.entities }, groupId: null }, data: { groupId: group.id } });
+  }
+  // The Sahan Logistics operations director also works with Sahan Trading.
+  const director = await prisma.contact.findFirst({ where: { name: "Mustafe Aden" } });
+  const trading = await prisma.client.findFirst({ where: { name: "Sahan Trading" } });
+  if (director && trading)
+    await prisma.contactEntityLink.upsert({
+      where: { contactId_clientId: { contactId: director.id, clientId: trading.id } },
+      update: {},
+      create: { contactId: director.id, clientId: trading.id },
+    });
+
+  // ---- IT catalog: distributors, vendor links, example products and costs ----
+  await prisma.vendor.upsert({ where: { name: "Tracker vendor (sample)" }, update: {}, create: { name: "Tracker vendor (sample)", notes: "Replace with the real tracker brand." } });
+  const vendorIds = new Map((await prisma.vendor.findMany()).map((v) => [v.name, v.id]));
+  const distIds = new Map<string, string>();
+  for (const d of DISTRIBUTORS) {
+    const { vendors, ...fields } = d;
+    const row = await prisma.distributor.upsert({ where: { name: d.name }, update: {}, create: fields });
+    distIds.set(d.name, row.id);
+    for (const v of vendors) {
+      const vendorId = vendorIds.get(v)!;
+      await prisma.vendorDistributor.upsert({ where: { vendorId_distributorId: { vendorId, distributorId: row.id } }, update: {}, create: { vendorId, distributorId: row.id } });
+    }
+  }
+  const catIds = new Map((await prisma.itCategory.findMany()).map((c) => [c.name, c.id]));
+  const adminId = userIds.get("admin")!;
+  for (const p of IT_PRODUCTS) {
+    const vendorId = vendorIds.get(p.vendor)!;
+    const product =
+      (await prisma.itProduct.findFirst({ where: { vendorId, name: p.name } })) ??
+      (await prisma.itProduct.create({ data: { vendorId, categoryId: catIds.get(p.category)!, name: p.name } }));
+    for (const sp of p.subs) {
+      if (await prisma.itSubProduct.findFirst({ where: { productId: product.id, name: sp.name } })) continue;
+      const sub = await prisma.itSubProduct.create({
+        data: { productId: product.id, name: sp.name, kind: sp.kind, unitLabel: sp.unit, termMonths: sp.term ?? null, quoteDescription: `${p.vendor} ${sp.name}` },
+      });
+      for (const [dist, cost, currency] of sp.costs ?? []) {
+        await prisma.distributorPrice.create({
+          data: {
+            distributorId: distIds.get(dist)!,
+            subProductId: sub.id,
+            unitCost: new Prisma.Decimal(cost),
+            currency,
+            exchangeRate: new Prisma.Decimal(currency === "AED" ? 3.6725 : 1),
+            quotedAt: new Date(Date.now() - 7 * 86_400_000),
+            reference: "SAMPLE-PI",
+            createdById: adminId,
+          },
+        });
+      }
+    }
   }
 
   console.log(`Demo data is in place. Demo users sign in with password: ${PASSWORD}`);

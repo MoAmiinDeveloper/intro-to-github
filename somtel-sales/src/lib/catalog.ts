@@ -6,7 +6,7 @@ type PlanLike = Pick<Plan, "priceType" | "billingFrequency" | "unitPrice" | "uni
 };
 
 /** Short, plain description of a plan's price, for lists. */
-export function planPriceSummary(plan: PlanLike, defaults: { licence: number; hardware: number }, itemKind?: string): string {
+export function planPriceSummary(plan: PlanLike): string {
   const price = formatMoney(plan.unitPrice);
   const unit = plan.unitLabel ? ` per ${plan.unitLabel}` : "";
   const included = plan.includedUnits ? `, includes ${plan.includedUnits} ${plan.includedLabel ?? "units"}` : "";
@@ -26,9 +26,7 @@ export function planPriceSummary(plan: PlanLike, defaults: { licence: number; ha
     }
     case "MARGIN_PERCENT": {
       const own = toNumber(plan.marginPct);
-      if (own !== null) return `Markup ${own}% on supplier cost`;
-      const d = itemKind === "LICENCE" ? defaults.licence : defaults.hardware;
-      return `Markup ${d}% on supplier cost (default from settings)`;
+      return own !== null ? `Markup ${own}% on supplier cost` : "Markup on supplier cost";
     }
   }
 }

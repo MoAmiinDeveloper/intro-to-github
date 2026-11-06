@@ -2,7 +2,7 @@
  * Reference data from the business brief. Seeding is "create if missing":
  * running it again never overwrites changes made in the app.
  */
-import type { ItemKind, PriceType, ProductType, BillingFrequency, TermsCategory, ClauseCategory, StageKind } from "@prisma/client";
+import type { PriceType, ProductType, BillingFrequency, TermsCategory, ClauseCategory, StageKind } from "@prisma/client";
 
 export const SECTORS = ["Private & INGOs", "Public Sector", "Financial Institutions", "Logistics", "Government"];
 
@@ -17,7 +17,8 @@ export const PIPELINE_STAGES: { name: string; description: string; probability: 
 
 export const LOST_REASONS = ["Price", "Competitor", "No budget", "No response", "Other"];
 
-export const FAMILIES: { name: string; enabled: boolean }[] = [
+/** Somtel services catalog: Category -> Service -> Plan. */
+export const SERVICE_CATEGORIES: { name: string; enabled: boolean }[] = [
   { name: "IaaS", enabled: true },
   { name: "SaaS", enabled: true },
   { name: "GSM", enabled: true },
@@ -25,7 +26,6 @@ export const FAMILIES: { name: string; enabled: boolean }[] = [
   { name: "Inventory", enabled: true },
   { name: "SmartPay", enabled: false },
   { name: "MLB Internet", enabled: false },
-  { name: "IT Resale", enabled: true },
   { name: "Vehicle Tracking", enabled: true },
 ];
 
@@ -38,28 +38,24 @@ export interface SeedPlan {
   unitLabel?: string;
   includedUnits?: number;
   includedLabel?: string;
-  marginPct?: number;
   tiers?: { fromQty: number; toQty: number | null; unitPrice: number }[];
 }
 
 export interface SeedService {
-  family: string;
+  category: string;
   name: string;
   description?: string;
-  vendor?: string;
   productType: ProductType;
-  itemKind: ItemKind;
   options?: string[];
   plans: SeedPlan[];
 }
 
 export const SERVICES: SeedService[] = [
   {
-    family: "GSM",
+    category: "GSM",
     name: "A2P SMS",
     description: "Application to person SMS through an API.",
     productType: "NON_IT",
-    itemKind: "SERVICE",
     plans: [
       { name: "API setup", priceType: "ONE_TIME", billingFrequency: "ONE_TIME", unitPrice: 100 },
       {
@@ -78,11 +74,10 @@ export const SERVICES: SeedService[] = [
     ],
   },
   {
-    family: "GSM",
+    category: "GSM",
     name: "Hosted IVR / Short Code",
     description: "Short code with hosted IVR.",
     productType: "NON_IT",
-    itemKind: "SERVICE",
     options: ["Direct to one line (no IVR)", "IVR menu routing to separate lines"],
     plans: [
       { name: "4-digit short code", priceType: "MONTHLY", billingFrequency: "MONTHLY", unitPrice: 20, includedUnits: 4, includedLabel: "IVR extensions" },
@@ -94,84 +89,34 @@ export const SERVICES: SeedService[] = [
     ],
   },
   {
-    family: "Vehicle Tracking",
+    category: "Vehicle Tracking",
     name: "Tracking platform",
     description: "Monthly platform fee per vehicle. Starts on the activation date of each vehicle.",
     productType: "TRACKING",
-    itemKind: "SERVICE",
     plans: [{ name: "Platform fee", priceType: "MONTHLY", billingFrequency: "MONTHLY", unitPrice: 1.4, unitLabel: "vehicle" }],
   },
-  {
-    family: "Vehicle Tracking",
-    name: "Tracking devices",
-    description: "Hardware bought from vendors and installed by Somtel.",
-    productType: "TRACKING",
-    itemKind: "HARDWARE",
-    options: ["Outright sale", "Somtel-owned device installed on the vehicle"],
-    plans: [
-      { name: "GPS tracker", priceType: "MARGIN_PERCENT", billingFrequency: "ONE_TIME", unitLabel: "device" },
-      { name: "Speed limiter", priceType: "MARGIN_PERCENT", billingFrequency: "ONE_TIME", unitLabel: "device" },
-      { name: "Dashcam", priceType: "MARGIN_PERCENT", billingFrequency: "ONE_TIME", unitLabel: "device" },
-    ],
-  },
-  {
-    family: "IT Resale",
-    name: "Software licences",
-    description: "Vendor licences and subscriptions resold by Somtel.",
-    productType: "IT",
-    itemKind: "LICENCE",
-    plans: [{ name: "Licence resale", priceType: "MARGIN_PERCENT", billingFrequency: "ONE_TIME" }],
-  },
-  {
-    family: "IT Resale",
-    name: "Hardware",
-    description: "Network and security hardware resold by Somtel.",
-    productType: "IT",
-    itemKind: "HARDWARE",
-    plans: [{ name: "Hardware resale", priceType: "MARGIN_PERCENT", billingFrequency: "ONE_TIME" }],
-  },
-  {
-    family: "IT Resale",
-    name: "Microsoft 365",
-    vendor: "Microsoft",
-    productType: "IT",
-    itemKind: "LICENCE",
-    plans: [{ name: "Microsoft 365 licences", priceType: "MARGIN_PERCENT", billingFrequency: "ONE_TIME", unitLabel: "user" }],
-  },
-  {
-    family: "IT Resale",
-    name: "Fortinet licences",
-    vendor: "Fortinet",
-    description: "Including UTP bundles and renewals.",
-    productType: "IT",
-    itemKind: "LICENCE",
-    plans: [{ name: "Fortinet licence", priceType: "MARGIN_PERCENT", billingFrequency: "ONE_TIME" }],
-  },
-  {
-    family: "IT Resale",
-    name: "Fortinet hardware",
-    vendor: "Fortinet",
-    productType: "IT",
-    itemKind: "HARDWARE",
-    plans: [{ name: "Fortinet appliance", priceType: "MARGIN_PERCENT", billingFrequency: "ONE_TIME" }],
-  },
-  {
-    family: "IT Resale",
-    name: "Sophos licences",
-    vendor: "Sophos",
-    productType: "IT",
-    itemKind: "LICENCE",
-    plans: [{ name: "Sophos licence", priceType: "MARGIN_PERCENT", billingFrequency: "ONE_TIME" }],
-  },
-  {
-    family: "IT Resale",
-    name: "Ubiquiti hardware",
-    vendor: "Ubiquiti",
-    description: "Access points, controllers and switches.",
-    productType: "IT",
-    itemKind: "HARDWARE",
-    plans: [{ name: "Ubiquiti device", priceType: "MARGIN_PERCENT", billingFrequency: "ONE_TIME", unitLabel: "device" }],
-  },
+];
+
+/** IT catalog: one shared category list for all vendors. */
+export const IT_CATEGORIES = [
+  "Firewall and security",
+  "Endpoint security",
+  "Wireless",
+  "Switching",
+  "Routing",
+  "Servers and storage",
+  "Productivity and collaboration",
+  "Cloud subscriptions",
+  "Vehicle tracking hardware",
+  "Other",
+];
+
+/** IT vendors named in the brief. Products are added in the app (or by the Excel import). */
+export const VENDORS: { name: string; website?: string }[] = [
+  { name: "Fortinet", website: "fortinet.com" },
+  { name: "Sophos", website: "sophos.com" },
+  { name: "Microsoft", website: "microsoft.com" },
+  { name: "Ubiquiti", website: "ui.com" },
 ];
 
 export const TERMS_TEMPLATES: { name: string; category: TermsCategory; body: string }[] = [

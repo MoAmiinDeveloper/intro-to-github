@@ -12,6 +12,7 @@ const ITEMS = [
   { href: "/settings/lists/tech-sections", label: "Tech sections" },
   { href: "/settings/pipeline-stages", label: "Pipeline stages" },
   { href: "/settings/lists/lost-reasons", label: "Lost reasons" },
+  { href: "/settings/lists/it-categories", label: "IT categories" },
   { href: "/settings/terms", label: "T&C templates" },
   { href: "/settings/clauses", label: "T&C clauses" },
   { href: "/settings/email", label: "Email" },
