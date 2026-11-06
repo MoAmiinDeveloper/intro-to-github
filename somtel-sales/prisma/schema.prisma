@@ -50,6 +50,8 @@ model User {
   techSections  UserTechSection[]
   ownedClients  Client[]             @relation("ClientOwner")
   ownedGroups   ClientGroup[]        @relation("GroupOwner")
+  ownedDeals    Deal[]               @relation("DealOwner")
+  activities    Activity[]
   resetTokens   PasswordResetToken[]
   notifications Notification[]
   auditLogs     AuditLog[]
@@ -155,6 +157,7 @@ model PipelineStage {
   active      Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  deals       Deal[]
 }
 
 model LostReason {
@@ -164,6 +167,7 @@ model LostReason {
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  deals     Deal[]
 }
 
 enum TermsCategory {
@@ -258,6 +262,8 @@ model Client {
   deletedAt     DateTime?
   contacts      Contact[]
   linkedPersons ContactEntityLink[]
+  deals         Deal[]
+  activities    Activity[]
 
   @@index([name])
   @@index([ownerId])
@@ -381,6 +387,7 @@ model Plan {
   updatedAt        DateTime         @updatedAt
   deletedAt        DateTime?
   tiers            PriceTier[]
+  dealLines        DealProduct[]
 
   @@unique([serviceId, name])
 }
@@ -395,6 +402,116 @@ model PriceTier {
   unitPrice Decimal @db.Decimal(14, 4)
 
   @@index([planId])
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline: deals, products of interest, activities, stage history
+// ---------------------------------------------------------------------------
+
+model Deal {
+  id                String            @id @default(cuid())
+  title             String
+  clientId          String
+  client            Client            @relation(fields: [clientId], references: [id])
+  productType       ProductType
+  stageId           String
+  stage             PipelineStage     @relation(fields: [stageId], references: [id])
+  // Win probability %. Copied from the stage when the deal moves; can be changed per deal.
+  probability       Int
+  // Estimated value, kept separate: one-time (setup, hardware, licences) and monthly (MRR).
+  oneTimeValue      Decimal           @default(0) @db.Decimal(14, 2)
+  monthlyValue      Decimal           @default(0) @db.Decimal(14, 2)
+  expectedCloseDate DateTime?         @db.Date
+  ownerId           String
+  owner             User              @relation("DealOwner", fields: [ownerId], references: [id])
+  nextStep          String?
+  nextFollowUpAt    DateTime?         @db.Date
+  lostReasonId      String?
+  lostReason        LostReason?       @relation(fields: [lostReasonId], references: [id])
+  lostNote          String?
+  // Last call, meeting, email, note or stage change. Used for the stale flag.
+  lastActivityAt    DateTime          @default(now())
+  stageChangedAt    DateTime          @default(now())
+  wonAt             DateTime?
+  lostAt            DateTime?
+  createdById       String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  deletedAt         DateTime?
+  products          DealProduct[]
+  activities        Activity[]
+  stageChanges      DealStageChange[]
+
+  @@index([ownerId])
+  @@index([stageId])
+  @@index([clientId])
+  @@index([nextFollowUpAt])
+}
+
+/// A product the client is interested in. Values are estimates; the quote (Phase 3) sets real prices.
+model DealProduct {
+  id           String        @id @default(cuid())
+  dealId       String
+  deal         Deal          @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  planId       String?
+  plan         Plan?         @relation(fields: [planId], references: [id])
+  subProductId String?
+  subProduct   ItSubProduct? @relation(fields: [subProductId], references: [id])
+  description  String
+  quantity     Decimal       @default(1) @db.Decimal(14, 2)
+  oneTimeValue Decimal       @default(0) @db.Decimal(14, 2)
+  monthlyValue Decimal       @default(0) @db.Decimal(14, 2)
+  sortOrder    Int           @default(0)
+}
+
+enum ActivityType {
+  CALL
+  MEETING
+  EMAIL
+  NOTE
+  STAGE_CHANGE
+}
+
+model Activity {
+  id         String       @id @default(cuid())
+  type       ActivityType
+  clientId   String
+  client     Client       @relation(fields: [clientId], references: [id])
+  dealId     String?
+  deal       Deal?        @relation(fields: [dealId], references: [id])
+  userId     String
+  user       User         @relation(fields: [userId], references: [id])
+  occurredAt DateTime
+  subject    String
+  body       String?
+  createdAt  DateTime     @default(now())
+  deletedAt  DateTime?
+
+  @@index([clientId, occurredAt])
+  @@index([dealId, occurredAt])
+}
+
+model DealStageChange {
+  id          String   @id @default(cuid())
+  dealId      String
+  deal        Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  fromStageId String?
+  toStageId   String
+  changedById String?
+  changedAt   DateTime @default(now())
+
+  @@index([dealId])
+}
+
+/// Stops the worker from sending the same reminder twice.
+model ReminderLog {
+  id        String   @id @default(cuid())
+  kind      String
+  dealId    String
+  key       String
+  createdAt DateTime @default(now())
+
+  @@unique([kind, dealId, key])
 }
 
 // ---------------------------------------------------------------------------
@@ -467,6 +584,7 @@ model ItSubProduct {
   updatedAt        DateTime           @updatedAt
   deletedAt        DateTime?
   costs            DistributorPrice[]
+  dealLines        DealProduct[]
 
   @@unique([productId, name])
   @@index([sku])

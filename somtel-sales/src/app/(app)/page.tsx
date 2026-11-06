@@ -5,6 +5,9 @@ import { can, requireUser } from "@/lib/session";
 import { clientScope } from "@/lib/clients";
 import { getAllSettings } from "@/lib/settings";
 import { smtpConfigured } from "@/lib/email";
+import { getSetting } from "@/lib/settings";
+import { dateKey, todayIn, totals } from "@/lib/pipeline";
+import { formatDate, formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/ui/page-header";
 import { buttonClass } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -24,12 +27,13 @@ export default async function DashboardPage() {
 
   const firstName = user.name.split(" ")[0];
   const isAdmin = can(user, "settings.manage");
+  const sales = can(user, "deals.view");
 
   return (
     <>
       <PageHeader
         title={`Welcome, ${firstName}`}
-        description="Your pipeline, follow-ups, orders and renewals will appear here as the next phases are added."
+        description="Your pipeline and follow-ups. Orders and renewals will appear here as the next phases are added."
         actions={
           can(user, "clients.create") && (
             <Link href="/clients/new" className={buttonClass("primary")}>
@@ -38,6 +42,7 @@ export default async function DashboardPage() {
           )
         }
       />
+      {sales && <MyPipeline userId={user.id} />}
       {canClients && (
         <div className="mb-6 grid gap-4 sm:grid-cols-3">
           <Stat label="My entities" value={mine} href={`/clients?owner=${user.id}`} />
@@ -63,6 +68,80 @@ export default async function DashboardPage() {
         {isAdmin && <SetupChecklist />}
       </div>
     </>
+  );
+}
+
+async function MyPipeline({ userId }: { userId: string }) {
+  const now = new Date();
+  const today = todayIn(now);
+  const staleDays = await getSetting<number>("pipeline.staleDays");
+  const [stages, deals, due, staleCount] = await Promise.all([
+    prisma.pipelineStage.findMany({ where: { active: true, kind: "OPEN" }, orderBy: { sortOrder: "asc" } }),
+    prisma.deal.findMany({ where: { ownerId: userId, deletedAt: null, stage: { kind: "OPEN" } }, select: { stageId: true, oneTimeValue: true, monthlyValue: true, probability: true } }),
+    prisma.deal.findMany({
+      where: { ownerId: userId, deletedAt: null, stage: { kind: "OPEN" }, nextFollowUpAt: { lte: new Date(`${today}T00:00:00Z`) } },
+      include: { client: { select: { name: true } } },
+      orderBy: { nextFollowUpAt: "asc" },
+      take: 6,
+    }),
+    prisma.deal.count({ where: { ownerId: userId, deletedAt: null, stage: { kind: "OPEN" }, lastActivityAt: { lte: new Date(now.getTime() - staleDays * 86_400_000) } } }),
+  ]);
+  const num = (d: (typeof deals)[number]) => ({ oneTimeValue: Number(d.oneTimeValue), monthlyValue: Number(d.monthlyValue), probability: d.probability });
+  const all = totals(deals.map(num));
+  const max = Math.max(1, ...stages.map((s) => deals.filter((d) => d.stageId === s.id).length));
+  return (
+    <div className="mb-6 grid gap-5 lg:grid-cols-5">
+      <Card className="lg:col-span-3">
+        <CardHeader
+          title="My pipeline"
+          description={`${all.count} open deals · ${formatMoney(all.oneTime)} + ${formatMoney(all.monthly)}/mo · weighted ${formatMoney(all.weightedOneTime)} + ${formatMoney(all.weightedMonthly)}/mo`}
+          actions={<Link href={`/pipeline?owner=${userId}`} className="text-sm text-navy hover:underline">Open board</Link>}
+        />
+        <CardBody className="space-y-3">
+          {stages.map((s) => {
+            const inStage = deals.filter((d) => d.stageId === s.id);
+            const t = totals(inStage.map(num));
+            return (
+              <div key={s.id}>
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium text-gray-800">
+                    {s.name} <span className="text-gray-400">({t.count})</span>
+                  </span>
+                  <span className="text-gray-600">
+                    {formatMoney(t.oneTime)} + {formatMoney(t.monthly)}/mo
+                  </span>
+                </div>
+                <div className="mt-1 h-2 rounded-full bg-gray-100">
+                  <div className="h-2 rounded-full bg-navy" style={{ width: `${(t.count / max) * 100}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </CardBody>
+      </Card>
+      <Card className="lg:col-span-2">
+        <CardHeader title="Follow-ups due" actions={<Link href="/follow-ups" className="text-sm text-navy hover:underline">All follow-ups</Link>} />
+        <CardBody className="space-y-2 p-0">
+          {due.length === 0 && <p className="px-5 py-4 text-sm text-gray-500">Nothing due today.</p>}
+          {due.map((d) => (
+            <Link key={d.id} href={`/deals/${d.id}`} className="flex items-center justify-between gap-3 px-5 py-2 text-sm hover:bg-gray-50">
+              <span>
+                <span className="font-medium text-navy">{d.title}</span>
+                <span className="block text-xs text-gray-500">{d.client.name}</span>
+              </span>
+              <span className={dateKey(d.nextFollowUpAt!) < today ? "text-xs font-medium text-red-600" : "text-xs font-medium text-navy"}>
+                {dateKey(d.nextFollowUpAt!) < today ? `Overdue (${formatDate(d.nextFollowUpAt)})` : "Today"}
+              </span>
+            </Link>
+          ))}
+          {staleCount > 0 && (
+            <Link href={`/pipeline?owner=${userId}&flag=stale`} className="block border-t border-gray-100 px-5 py-3 text-sm text-amber-700 hover:bg-amber-50">
+              {staleCount} stale {staleCount === 1 ? "deal" : "deals"} with no activity for {staleDays}+ days
+            </Link>
+          )}
+        </CardBody>
+      </Card>
+    </div>
   );
 }
 

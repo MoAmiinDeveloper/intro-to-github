@@ -4,6 +4,7 @@
  */
 import bcrypt from "bcryptjs";
 import { Prisma, PrismaClient, type ItKind, type Role } from "@prisma/client";
+import { addDays, todayIn } from "../src/lib/pipeline";
 
 const prisma = new PrismaClient();
 const PASSWORD = process.env.DEMO_PASSWORD || "Somtel2026demo";
@@ -244,6 +245,63 @@ async function main() {
         });
       }
     }
+  }
+
+  // ---- Deals (Phase 2) ----
+  const stageIds = new Map((await prisma.pipelineStage.findMany()).map((st) => [st.name, st]));
+  const lost = await prisma.lostReason.findFirst({ where: { name: "Price" } });
+  const day = 86_400_000;
+  // Dates relative to today in Hargeisa time (the app's time zone), not UTC.
+  const today = todayIn(new Date());
+  const dateOnly = (offsetDays: number) => new Date(`${addDays(today, offsetDays)}T00:00:00Z`);
+  const DEALS: {
+    title: string; client: string; owner: string; type: "IT" | "NON_IT" | "TRACKING"; stage: string;
+    oneTime: number; monthly: number; close: number; followUp?: number; lastActivityDaysAgo: number; nextStep?: string;
+  }[] = [
+    { title: "A2P SMS for customer alerts", client: "Barwaaqo Microfinance", owner: "am2", type: "NON_IT", stage: "Proposal Sent", oneTime: 900, monthly: 0, close: 14, followUp: 0, lastActivityDaysAgo: 4, nextStep: "Call the IT manager about the proposal" },
+    { title: "Head office firewall", client: "Barwaaqo Microfinance", owner: "am2", type: "IT", stage: "Negotiation", oneTime: 2450, monthly: 0, close: 7, followUp: -2, lastActivityDaysAgo: 3, nextStep: "Send the revised price" },
+    { title: "Branch Wi-Fi", client: "Dalmar Savings Bank", owner: "am2", type: "IT", stage: "Qualified", oneTime: 3800, monthly: 0, close: 30, followUp: 3, lastActivityDaysAgo: 2 },
+    { title: "Fleet tracking, 60 trucks", client: "Sahan Logistics Ltd", owner: "am1", type: "TRACKING", stage: "Proposal Sent", oneTime: 7200, monthly: 84, close: 21, followUp: 0, lastActivityDaysAgo: 5, nextStep: "Site visit to count vehicles" },
+    { title: "Short code for customer care", client: "Sahan Trading", owner: "am1", type: "NON_IT", stage: "Lead", oneTime: 0, monthly: 60, close: 45, lastActivityDaysAgo: 41 },
+    { title: "Microsoft 365 for field staff", client: "Horn Relief Alliance", owner: "am1", type: "IT", stage: "Qualified", oneTime: 6750, monthly: 0, close: 20, followUp: 5, lastActivityDaysAgo: 35 },
+    { title: "Hosted IVR for hotline", client: "Regional Health Office (sample)", owner: "am3", type: "NON_IT", stage: "Negotiation", oneTime: 40, monthly: 80, close: 10, followUp: -1, lastActivityDaysAgo: 6 },
+    { title: "Bulk SMS for billing notices", client: "Burao Water Utility (sample)", owner: "am3", type: "NON_IT", stage: "Lead", oneTime: 600, monthly: 0, close: 60, lastActivityDaysAgo: 10 },
+    { title: "Endpoint security renewal", client: "Horn Relief Alliance", owner: "am1", type: "IT", stage: "Won", oneTime: 1800, monthly: 0, close: -5, lastActivityDaysAgo: 5 },
+    { title: "Speed limiters for buses", client: "Raad Transport Co", owner: "am1", type: "TRACKING", stage: "Lost", oneTime: 5200, monthly: 35, close: -10, lastActivityDaysAgo: 12 },
+  ];
+  const clientByName = new Map((await prisma.client.findMany({ select: { id: true, name: true } })).map((c) => [c.name, c.id]));
+  for (const d of DEALS) {
+    if (await prisma.deal.findFirst({ where: { title: d.title } })) continue;
+    const stage = stageIds.get(d.stage)!;
+    const ownerId = userIds.get(d.owner)!;
+    const clientId = clientByName.get(d.client)!;
+    const last = new Date(Date.now() - d.lastActivityDaysAgo * day);
+    const deal = await prisma.deal.create({
+      data: {
+        title: d.title,
+        clientId,
+        productType: d.type,
+        stageId: stage.id,
+        probability: stage.probability,
+        oneTimeValue: new Prisma.Decimal(d.oneTime),
+        monthlyValue: new Prisma.Decimal(d.monthly),
+        expectedCloseDate: dateOnly(d.close),
+        nextFollowUpAt: d.followUp === undefined ? null : dateOnly(d.followUp),
+        nextStep: d.nextStep,
+        ownerId,
+        createdById: ownerId,
+        lastActivityAt: last,
+        stageChangedAt: last,
+        createdAt: new Date(last.getTime() - 7 * day),
+        wonAt: stage.kind === "WON" ? last : null,
+        lostAt: stage.kind === "LOST" ? last : null,
+        lostReasonId: stage.kind === "LOST" ? lost?.id : null,
+      },
+    });
+    await prisma.dealStageChange.create({ data: { dealId: deal.id, toStageId: stage.id, changedById: ownerId, changedAt: last } });
+    await prisma.activity.create({
+      data: { type: "CALL", clientId, dealId: deal.id, userId: ownerId, occurredAt: last, subject: `Spoke with the client about ${d.title.toLowerCase()}` },
+    });
   }
 
   console.log(`Demo data is in place. Demo users sign in with password: ${PASSWORD}`);

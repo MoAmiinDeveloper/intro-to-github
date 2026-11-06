@@ -25,7 +25,11 @@ export type Permission =
   | "clients.assignOwner"
   | "audit.view"
   | "costs.view"
-  | "costs.record";
+  | "costs.record"
+  | "deals.view"
+  | "deals.viewAll"
+  | "deals.create"
+  | "deals.assignOwner";
 
 const PERMISSIONS: Record<Permission, Role[]> = {
   "settings.manage": ["ADMIN"],
@@ -59,6 +63,11 @@ const PERMISSIONS: Record<Permission, Role[]> = {
   "audit.view": ["ADMIN", "HEAD_OF_ENTERPRISE"],
   // Distributor costs are internal. Billing and Tech do not need them.
   "costs.view": ["ADMIN", "HEAD_OF_ENTERPRISE", "MANAGER", "ACCOUNT_MANAGER", "ENTERPRISE_SUPPORT", "PROCUREMENT", "FINANCE"],
+  // Pipeline: sales people see their own deals, managers their team's, Head and Admin everything.
+  "deals.view": ["ADMIN", "HEAD_OF_ENTERPRISE", "MANAGER", "ACCOUNT_MANAGER"],
+  "deals.viewAll": ["ADMIN", "HEAD_OF_ENTERPRISE"],
+  "deals.create": ["ADMIN", "HEAD_OF_ENTERPRISE", "MANAGER", "ACCOUNT_MANAGER"],
+  "deals.assignOwner": ["ADMIN", "HEAD_OF_ENTERPRISE", "MANAGER"],
   "costs.record": ["ADMIN", "HEAD_OF_ENTERPRISE", "MANAGER", "ACCOUNT_MANAGER", "ENTERPRISE_SUPPORT", "PROCUREMENT"],
 };
 

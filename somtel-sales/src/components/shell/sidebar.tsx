@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, Building2, FileClock, Home, Package, Settings } from "lucide-react";
+import { AlarmClock, Bell, Building2, Columns3, FileClock, Home, Package, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "./nav";
 
-const ICONS = { home: Home, clients: Building2, catalog: Package, settings: Settings, audit: FileClock, bell: Bell };
+const ICONS = { home: Home, clients: Building2, catalog: Package, settings: Settings, audit: FileClock, bell: Bell, pipeline: Columns3, followups: AlarmClock };
 
 export function Sidebar({ items }: { items: NavItem[] }) {
   const pathname = usePathname();
@@ -35,6 +35,9 @@ export function Sidebar({ items }: { items: NavItem[] }) {
             >
               <Icon className="h-4 w-4" />
               {item.label}
+              {!!item.badge && (
+                <span className={cn("ml-auto rounded-full px-1.5 text-[11px] font-bold", active ? "bg-navy text-gold" : "bg-gold text-navy")}>{item.badge}</span>
+              )}
             </Link>
           );
         })}

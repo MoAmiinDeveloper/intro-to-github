@@ -2,7 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Mail, Pencil, Phone, Star, Trash2 } from "lucide-react";
 import { prisma } from "@/lib/db";
-import { requirePermission } from "@/lib/session";
+import { can, getTeamIds, requirePermission } from "@/lib/session";
+import { dealScope } from "@/lib/deals";
+import { hasRole } from "@/lib/roles";
+import { totals } from "@/lib/pipeline";
+import { formatDate, formatMoney } from "@/lib/utils";
+import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
+import { ActivityForm } from "@/components/deals/activity-form";
+import { ActivityList } from "@/components/deals/activity-list";
 import { CLIENT_STATUS_LABELS, CLIENT_STATUS_TONE, canDeleteClient, canEditClient, clientScope } from "@/lib/clients";
 import { PageHeader, EmptyState } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -39,11 +46,32 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
     ? await prisma.client.findMany({ where: { groupId: client.groupId, deletedAt: null, NOT: { id } }, select: { id: true, name: true }, orderBy: { name: "asc" } })
     : [];
   const shared = client.linkedPersons.map((l) => l.contact);
+  const seeDeals = can(user, "deals.view");
+  const deals = seeDeals
+    ? await prisma.deal.findMany({
+        where: { AND: [{ clientId: id, deletedAt: null }, await dealScope(user)] },
+        include: { stage: true, owner: { select: { name: true } } },
+        orderBy: [{ stage: { sortOrder: "asc" } }, { expectedCloseDate: "asc" }],
+      })
+    : [];
+  const open = totals(deals.filter((d) => d.stage.kind === "OPEN").map((d) => ({ oneTimeValue: Number(d.oneTimeValue), monthlyValue: Number(d.monthlyValue), probability: d.probability })));
+  const activities =
+    tab === "activity"
+      ? await prisma.activity.findMany({
+          where: { clientId: id, deletedAt: null, OR: [{ dealId: null }, { deal: await dealScope(user) }] },
+          include: { user: { select: { name: true } }, deal: { select: { id: true, title: true } } },
+          orderBy: { occurredAt: "desc" },
+          take: 200,
+        })
+      : [];
+  const team = tab === "activity" ? await getTeamIds(user.id) : [];
   const [editable, deletable] = await Promise.all([canEditClient(user, client), canDeleteClient(user, client)]);
 
   const tabs = [
     { key: "overview", label: "Overview" },
     { key: "contacts", label: `People (${client.contacts.length + shared.length})` },
+    ...(seeDeals ? [{ key: "deals", label: `Deals (${deals.length})` }] : []),
+    { key: "activity", label: "Activity" },
     { key: "timeline", label: "Timeline" },
   ];
 
@@ -217,6 +245,78 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
               <CardHeader title="Add a person" />
               <CardBody>
                 <ContactForm clientId={id} groupEntities={groupEntities} />
+              </CardBody>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {tab === "deals" && seeDeals && (
+        <Card>
+          <CardHeader
+            title="Deals"
+            description={`Open: ${open.count} · ${formatMoney(open.oneTime)} one-time + ${formatMoney(open.monthly)}/mo`}
+            actions={
+              can(user, "deals.create") && (
+                <Link href={`/deals/new?client=${id}`} className={buttonClass("primary", "sm")}>
+                  New deal
+                </Link>
+              )
+            }
+          />
+          {deals.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-gray-500">No deals yet.</p>
+          ) : (
+            <Table>
+              <THead>
+                <tr>
+                  <TH>Deal</TH>
+                  <TH>Stage</TH>
+                  <TH>Owner</TH>
+                  <TH className="text-right">One-time</TH>
+                  <TH className="text-right">Monthly</TH>
+                  <TH>Close date</TH>
+                </tr>
+              </THead>
+              <TBody>
+                {deals.map((d) => (
+                  <TR key={d.id}>
+                    <TD>
+                      <Link href={`/deals/${d.id}`} className="font-medium text-navy hover:underline">
+                        {d.title}
+                      </Link>
+                    </TD>
+                    <TD>
+                      <Badge tone={d.stage.kind === "WON" ? "green" : d.stage.kind === "LOST" ? "red" : "navy"}>{d.stage.name}</Badge>
+                    </TD>
+                    <TD className="text-sm">{d.owner.name}</TD>
+                    <TD className="text-right">{formatMoney(Number(d.oneTimeValue))}</TD>
+                    <TD className="text-right">{formatMoney(Number(d.monthlyValue))}</TD>
+                    <TD className="text-sm">{d.expectedCloseDate ? formatDate(d.expectedCloseDate) : ""}</TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          )}
+        </Card>
+      )}
+
+      {tab === "activity" && (
+        <div className="grid gap-5 lg:grid-cols-5">
+          <Card className="lg:col-span-3">
+            <CardHeader title="Activity" description="Calls, meetings, emails and notes with this entity, including those logged on its deals." />
+            <CardBody>
+              <ActivityList
+                items={activities}
+                canDelete={(a) => a.userId === user.id || hasRole(user.roles, "ADMIN", "HEAD_OF_ENTERPRISE") || team.includes(a.userId)}
+              />
+            </CardBody>
+          </Card>
+          {editable && (
+            <Card className="lg:col-span-2">
+              <CardHeader title="Log activity" description="Not about a specific deal? Log it here. For a deal, log it on the deal page." />
+              <CardBody>
+                <ActivityForm clientId={id} />
               </CardBody>
             </Card>
           )}

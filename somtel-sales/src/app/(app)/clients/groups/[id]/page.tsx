@@ -3,6 +3,9 @@ import { notFound } from "next/navigation";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { can, requirePermission } from "@/lib/session";
+import { dealScope } from "@/lib/deals";
+import { totals } from "@/lib/pipeline";
+import { formatMoney } from "@/lib/utils";
 import { CLIENT_STATUS_LABELS, CLIENT_STATUS_TONE, canDeleteClient, canEditClient, clientScope, groupScope } from "@/lib/clients";
 import { PageHeader, EmptyState } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +46,13 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   const people = group.entities.flatMap((e) => e.contacts.map((c) => ({ ...c, entityName: e.name, entityId: e.id })));
   const hidden = group._count.entities - group.entities.length;
   const active = group.entities.filter((e) => e.status === "ACTIVE").length;
+  const openDeals = can(user, "deals.view")
+    ? await prisma.deal.findMany({
+        where: { AND: [await dealScope(user), { deletedAt: null, stage: { kind: "OPEN" }, client: { groupId: id, deletedAt: null } }] },
+        select: { oneTimeValue: true, monthlyValue: true, probability: true },
+      })
+    : null;
+  const pipe = openDeals ? totals(openDeals.map((d) => ({ oneTimeValue: Number(d.oneTimeValue), monthlyValue: Number(d.monthlyValue), probability: d.probability }))) : null;
 
   return (
     <>
@@ -74,12 +84,19 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         }
       />
 
-      <div className="mb-5 grid gap-4 sm:grid-cols-3">
+      <div className="mb-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Entities" value={group._count.entities} />
         <Stat label="Active entities" value={active} />
         <Stat label="People" value={people.length} />
+        {pipe && (
+          <Card className="border-l-4 border-l-gold p-4">
+            <div className="text-sm text-gray-500">Open pipeline ({pipe.count} deals)</div>
+            <div className="mt-1 text-xl font-semibold text-navy">{formatMoney(pipe.oneTime)}</div>
+            <div className="text-xs text-gray-500">+ {formatMoney(pipe.monthly)}/mo · weighted {formatMoney(pipe.weightedOneTime)} + {formatMoney(pipe.weightedMonthly)}/mo</div>
+          </Card>
+        )}
       </div>
-      <p className="mb-5 text-xs text-gray-500">Pipeline, orders, active services and revenue for the whole group will appear here as the next phases are built.</p>
+      <p className="mb-5 text-xs text-gray-500">Orders, active services and revenue for the whole group will appear here as the next phases are built.</p>
 
       <div className="grid gap-5 lg:grid-cols-5">
         <Card className="lg:col-span-3">
