@@ -12,8 +12,8 @@ The design (data model, screens, confirmed business rules) is in [`../docs/DESIG
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Sign in, roles, settings, branding, customers (groups, entities, people), catalogs (Somtel services; IT vendors, products and distributors) | **Done** |
-| 2 | Pipeline (kanban + table), activities, follow-ups, stale deals | Next |
-| 3 | Costing calculator, quotes and proposals, approvals, PDF and Word | |
+| 2 | Pipeline (kanban + table), deals, activities, follow-ups, stale deals, reminders | **Done** |
+| 3 | Costing calculator, quotes and proposals, approvals, PDF and Word | Next |
 | 4 | Non-IT orders (Billing then tech sections), IT orders (12 stages) | |
 | 5 | Vehicle tracking orders, renewals, notifications | |
 | 6 | Dashboards, reports, Excel import and export, audit log screens | |
@@ -46,7 +46,7 @@ This starts three containers:
 |---|---|
 | `db` | PostgreSQL 16. Data is kept in the `pgdata` volume. |
 | `app` | The web app on port 3000. On every start it applies database updates and makes sure the reference data exists (sectors, stages, catalog, T&C). It never overwrites changes made in the app. |
-| `worker` | Sends queued emails every 30 seconds and retries failures. Later phases add reminders and alerts here. |
+| `worker` | Sends queued emails every 30 seconds and retries failures. Every 15 minutes it sends follow-up reminders (from 7:00 Hargeisa time on the due day) and stale-deal alerts, in the app and by email. Each reminder is sent once. |
 
 Open `http://<server>:3000`. To use another port set `APP_PORT=8080` in `.env`.
 For HTTPS, put the app behind your usual reverse proxy (nginx, IIS, Traefik) and set `APP_URL` to the public https address.
@@ -71,6 +71,7 @@ docker compose logs -f app worker
 | `APP_URL` | The address users type, for example `https://sales.somtel.com`. Used in email links. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Your mail server. For Microsoft 365: host `smtp.office365.com`, port `587`, secure `false`, and a mailbox that is allowed to send with SMTP AUTH. |
 | `UPLOAD_DIR` | Leave as it is for Docker (`/data/uploads`, kept in the `uploads` volume). |
+| `APP_TIMEZONE` | Time zone used for "today" (follow-ups and reminders). Default `Africa/Mogadishu` (Hargeisa time). |
 
 After changing `.env`, apply it with:
 
@@ -194,6 +195,7 @@ npm run worker
 | Command | What it does |
 |---|---|
 | `npm test` | Unit tests for the business rules |
+| `TEST_DATABASE_URL=<url> npm run test:db` | Database tests for the reminder worker. Use a test database: it adds and removes test deals |
 | `npm run typecheck` | TypeScript check |
 | `npm run build` | Production build |
 | `npx prisma migrate dev --name <change>` | Create a database migration after editing `prisma/schema.prisma` |
@@ -229,5 +231,8 @@ tests/                      Unit tests
 
 Customers are organised as **Group → Entity → Person**. An entity is the legal company you quote and bill; a group is optional.
 A group can be seen by anyone who owns it or can see one of its entities.
+**Pipeline:** sales people see and edit their own deals, managers see and edit their team's deals (everyone below them in the reporting line),
+the Head of Enterprise and Admin see all deals. Enterprise Support, Procurement, Finance, Billing and Tech do not see the pipeline.
+
 An entity (or group) can be edited by its owner, anyone above the owner in the reporting line, the Head of Enterprise and Admin.
 Managers, the Head and Admin can delete (soft delete; Admin can restore from **Customers → Show deleted entities**).
